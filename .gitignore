@@ -1,0 +1,7 @@
+target/
+run/
+*.jar
+sessions.properties
+.idea/
+*.iml
+.vscode/
