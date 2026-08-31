@@ -141,19 +141,33 @@ Worth being clear about what this does and does not buy you:
 JAVA_HOME=/path/to/jdk-25 mvn package   # -> target/EasyGuard-0.0.1.jar
 ```
 
-`mvn test` runs the unit tests (codes, attempt/expiry handling, session persistence, webhook
-delivery against a local mock HTTP server).
+## Testing
 
-## Verified against a live server
+Because this plugin fails *closed*, the failure that matters is "nobody can log in" — so test
+it against a server you do not care about before you point it at one you do.
 
-This build was exercised end-to-end on Paper 26.1.2 (build 74) with a scripted client:
+```sh
+cd testing && npm install && npm run e2e
+```
 
-- code delivered to the webhook on join, prompt shown to the player
-- movement blocked while unverified, restored after verification
-- chat from an unverified player never broadcast; a wrong code rejected with attempts counted down
-- commands other than `/verify` blocked while unverified
-- correct code accepted, join message posted afterwards
-- reconnect inside the trust window issues no second code
-- Discord unreachable → player stays held, code written to console
-- invalid config → lockdown, login denied at pre-login
-- verification timeout → kick
+That boots a throwaway Paper 26.1.2 server, installs the jar you just built, points it at a
+local mock webhook (never the real Discord), and drives real Minecraft clients through nine
+scenarios — including the ones that lock the server down — then cleans up. About four minutes.
+
+It verifies, against a live server rather than by assertion:
+
+- a code reaches the webhook on join, and the player is frozen until they answer it
+- a lower-case paste of the code works
+- wrong codes count down, are never broadcast to public chat, and kick on the third
+- other commands are refused while unverified
+- a verified player reconnecting inside the trust window gets no second code
+- an unanswered join is kicked on timeout
+- **Discord unreachable → the player is held, the code goes to the server console, and that
+  console code still verifies** — the escape hatch you would use during an outage
+- **a broken config denies every login** rather than leaving the server unprotected, whether it
+  breaks on reload or at startup
+- **a fixed config lets you back in** — by reload, without a restart, or by restart
+
+See [`testing/README.md`](testing/README.md) for options, and for what it deliberately does not
+cover. `mvn test` runs the unit tests underneath it (codes, attempt/expiry handling, session
+persistence, webhook delivery against a local mock HTTP server).

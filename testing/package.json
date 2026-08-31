@@ -1,0 +1,14 @@
+{
+  "name": "easyguard-testing",
+  "version": "0.0.1",
+  "private": true,
+  "description": "End-to-end tests for EasyGuard against a throwaway Paper server",
+  "main": "e2e.js",
+  "scripts": {
+    "e2e": "node e2e.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "mineflayer": "^4.38.0"
+  }
+}
