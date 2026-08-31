@@ -48,7 +48,7 @@ channel can read every code — see [Limits](#limits).
 
 ### 2. Install
 
-Drop `EasyGuard-1.0.0.jar` into `plugins/` and start the server once. It will refuse to run until a
+Drop `EasyGuard-0.0.1.jar` into `plugins/` and start the server once. It will refuse to run until a
 webhook URL is set (that is deliberate — see [Fail-closed](#fail-closed)).
 
 ### 3. Point it at your webhook
@@ -138,7 +138,7 @@ Worth being clear about what this does and does not buy you:
 ## Building
 
 ```sh
-JAVA_HOME=/path/to/jdk-25 mvn package   # -> target/EasyGuard-1.0.0.jar
+JAVA_HOME=/path/to/jdk-25 mvn package   # -> target/EasyGuard-0.0.1.jar
 ```
 
 `mvn test` runs the unit tests (codes, attempt/expiry handling, session persistence, webhook
