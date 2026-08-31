@@ -1,0 +1,15 @@
+name: EasyGuard
+version: '${project.version}'
+main: io.github.ultra0magnus.easyguard.EasyGuardPlugin
+api-version: '26.1'
+description: Requires a single-use code posted to Discord before a player may play.
+author: Ultra0Magnus
+website: https://github.com/Ultra0Magnus/easyguard
+load: POSTWORLD
+permissions:
+  easyguard.admin:
+    description: Use /easyguard administration commands.
+    default: op
+  easyguard.bypass:
+    description: Skip Discord verification entirely. Grant with care - it defeats the gate.
+    default: false

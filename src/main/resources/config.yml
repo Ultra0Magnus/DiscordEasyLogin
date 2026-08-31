@@ -1,0 +1,83 @@
+# EasyGuard - Discord single-use code gate
+#
+# Setting 'enabled: false' turns the gate OFF and players join with no code at all.
+# It is logged loudly at startup so it can never be off by accident unnoticed.
+enabled: true
+
+discord:
+  # Channel -> Edit Channel -> Integrations -> Webhooks -> New Webhook -> Copy Webhook URL.
+  # Prefer the EASYGUARD_DISCORD_WEBHOOK environment variable over this field: it overrides
+  # the value here and keeps the secret out of your config backups.
+  webhook_url: ""
+
+  # Name the messages are posted under.
+  username: "EasyGuard"
+
+  # How long to wait for Discord before treating delivery as failed.
+  timeout_seconds: 5
+
+  # Text put in front of every message, e.g. "<@1234567890>" to ping yourself.
+  # Pings are suppressed by default, so this renders as plain text unless you allow mentions.
+  mention_prefix: ""
+
+  # Only https://discord.com/api/webhooks/... URLs are accepted unless you set this to true.
+  # Leave it false: it stops a typo from mailing verification codes to somebody else's server.
+  allow_non_discord_host: false
+
+code:
+  length: 8
+  ttl_seconds: 300
+  max_attempts: 3
+
+  # Per-player wait before another code may be issued.
+  cooldown_seconds: 10
+
+  # Server-wide ceiling, so a join-flood cannot spam your Discord channel.
+  max_per_minute: 20
+
+verification:
+  # How long a player may sit unverified before being kicked.
+  timeout_seconds: 120
+
+  # Hold the player at the spot they logged in at.
+  freeze_movement: true
+
+  # Blind them while unverified, so an unverified client cannot scout the base.
+  apply_blindness: true
+
+  # Hide them from everyone else (including the tab list) until verified.
+  hide_from_others: true
+
+  # Suppress the vanilla join message until verification succeeds, then post it.
+  suppress_join_message: true
+
+trust:
+  # Hours a verified player may reconnect without a new code. 0 = require a code on every join.
+  duration_hours: 24
+
+fallback:
+  # If Discord cannot be reached, write the code to the server console so you still have a
+  # way in during an outage. The player stays held until someone gives them that code.
+  # Set to false to kick them outright instead.
+  log_code_to_console_on_failure: true
+
+# All player-facing text is MiniMessage: https://docs.advntr.dev/minimessage/format.html
+# Placeholders: <player>, <attempts>, <code>, <uuid>, <ip>, <ttl>
+messages:
+  prompt: "<gold>EasyGuard</gold> <gray>|</gray> <white>A single-use code was sent to Discord. Paste it in chat to play.</white>"
+  prompt_waiting: "<gray>Contacting Discord...</gray>"
+  success: "<green>Verified. Welcome, <white><player></white>!</green>"
+  wrong_code: "<red>Wrong code.</red> <gray><attempts> attempt(s) left.</gray>"
+  expired: "<red>That code expired. Reconnect to get a new one.</red>"
+  no_pending: "<gray>You have nothing to verify.</gray>"
+  usage: "<gray>Usage: /verify <code></gray>"
+  blocked_action: "<red>Verify first: paste the code from Discord in chat.</red>"
+  discord_down: "<red>Discord could not be reached.</red><newline><gray>Your code was written to the server console - ask the server owner for it.</gray>"
+  kick_timeout: "<red>Verification timed out.</red><newline><gray>Reconnect and paste the code from Discord.</gray>"
+  kick_out_of_attempts: "<red>Too many wrong codes.</red><newline><gray>Reconnect to request a new one.</gray>"
+  kick_unavailable: "<red>Verification is unavailable right now.</red><newline><gray>The server could not reach Discord. Try again shortly.</gray>"
+  kick_rate_limited: "<red>Too many verification requests.</red><newline><gray>Wait a moment and reconnect.</gray>"
+  kick_lockdown: "<red>This server is locked down.</red><newline><gray>EasyGuard could not start, so logins are blocked.</gray>"
+
+  # Plain Markdown sent to Discord (not MiniMessage). \n makes a new line.
+  discord_template: "**Join request**\nPlayer: `<player>`\nUUID: `<uuid>`\nIP: `<ip>`\nCode: **<code>**\nExpires in <ttl>."
