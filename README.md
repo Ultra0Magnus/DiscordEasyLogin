@@ -168,6 +168,16 @@ It verifies, against a live server rather than by assertion:
   breaks on reload or at startup
 - **a fixed config lets you back in** — by reload, without a restart, or by restart
 
-See [`testing/README.md`](testing/README.md) for options, and for what it deliberately does not
-cover. `mvn test` runs the unit tests underneath it (codes, attempt/expiry handling, session
+A second suite, `npm run adversarial`, tries to *defeat* the gate rather than exercise it:
+namespaced command bypasses, using another player's code, reusing a dead one, rejoining after a
+kick, double-pastes, expired codes, webhook floods, and whether the vanilla whitelist really
+runs before any code is issued. It also records three findings worth knowing — a reconnect loop
+evades the per-player cooldown, a teleport can move a held player, and another plugin listening
+to chat at `MONITOR` priority can see what an unverified player types.
+
+See [`testing/README.md`](testing/README.md) for those findings in full, for
+`EASYGUARD_EXTRA_PLUGINS` (running the suites beside your own plugin set), and for what
+deliberately is not covered — notably voice chat, which no scripted client can test.
+
+`mvn test` runs the unit tests underneath both suites (codes, attempt/expiry handling, session
 persistence, webhook delivery against a local mock HTTP server).

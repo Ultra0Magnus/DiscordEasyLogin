@@ -5,7 +5,8 @@
   "description": "End-to-end tests for EasyGuard against a throwaway Paper server",
   "main": "e2e.js",
   "scripts": {
-    "e2e": "node e2e.js"
+    "e2e": "node e2e.js",
+    "adversarial": "node adversarial.js"
   },
   "license": "MIT",
   "dependencies": {

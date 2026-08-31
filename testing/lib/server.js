@@ -156,10 +156,41 @@ class PaperServer {
     fs.copyFileSync(pluginJar, path.join(this.dir, 'plugins', path.basename(pluginJar)));
   }
 
+  /**
+   * Copies extra plugin jars in. The point of the suites is what happens beside your *other*
+   * plugins, which a clean server never shows: point EASYGUARD_EXTRA_PLUGINS at a directory of
+   * jars (or set a single jar path) to reproduce a real plugin set.
+   */
+  installExtraPlugins(source) {
+    if (!source) return [];
+    if (!fs.existsSync(source)) {
+      throw new Error(`EASYGUARD_EXTRA_PLUGINS points at ${source}, which does not exist.`);
+    }
+    const jars = fs.statSync(source).isDirectory()
+      ? fs.readdirSync(source).filter((name) => name.endsWith('.jar')).map((n) => path.join(source, n))
+      : [source];
+    const plugins = path.join(this.dir, 'plugins');
+    fs.mkdirSync(plugins, { recursive: true });
+    for (const jar of jars) {
+      fs.copyFileSync(jar, path.join(plugins, path.basename(jar)));
+    }
+    return jars.map((jar) => path.basename(jar));
+  }
+
   writePluginConfig(yaml) {
     const folder = path.join(this.dir, 'plugins', 'EasyGuard');
     fs.mkdirSync(folder, { recursive: true });
     fs.writeFileSync(path.join(folder, 'config.yml'), yaml);
+  }
+
+  /** Rewrites one key in server.properties. Only takes effect on the next boot. */
+  setProperty(key, value) {
+    const file = path.join(this.dir, 'server.properties');
+    const lines = fs.readFileSync(file, 'utf8').split('\n');
+    const index = lines.findIndex((line) => line.startsWith(`${key}=`));
+    if (index === -1) lines.unshift(`${key}=${value}`);
+    else lines[index] = `${key}=${value}`;
+    fs.writeFileSync(file, lines.join('\n'));
   }
 
   clearTrustedSessions() {
