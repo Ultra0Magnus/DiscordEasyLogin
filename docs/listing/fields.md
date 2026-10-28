@@ -28,8 +28,8 @@ but the tests can't fully run there yet (see `testing/README.md`). Add it once C
 | Platform | **Paper** only. Hangar requires every platform you tick to load the plugin; Velocity and Waterfall can't. |
 | Platform versions | 26.1.2, 26.2 |
 | License | MIT |
-| Source | https://github.com/Ultra0Magnus/easyguard (once public) |
-| Issues | https://github.com/Ultra0Magnus/easyguard/issues (once public) |
+| Source | https://github.com/Ultra0Magnus/DiscordEasyLogin (once public) |
+| Issues | https://github.com/Ultra0Magnus/DiscordEasyLogin/issues (once public) |
 | Dependencies | none |
 
 Hangar's guidelines that matter here, all met: the platforms ticked can load it; it doesn't grant
@@ -50,8 +50,8 @@ password plugin, which Hangar does not allow).
 | Game versions | 26.1.2, 26.2 |
 | Environment | Server-side only |
 | License | MIT |
-| Source | https://github.com/Ultra0Magnus/easyguard (once public) |
-| Issues | https://github.com/Ultra0Magnus/easyguard/issues (once public) |
+| Source | https://github.com/Ultra0Magnus/DiscordEasyLogin (once public) |
+| Issues | https://github.com/Ultra0Magnus/DiscordEasyLogin/issues (once public) |
 
 **Content disclosure — required.** Modrinth's rules forbid software that uploads data to a remote
 server "without clear disclosure". DiscordEasyLogin posts the joining player's name, UUID and code
