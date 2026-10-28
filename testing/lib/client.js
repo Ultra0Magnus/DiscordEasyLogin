@@ -56,12 +56,16 @@ function flatten(reason) {
 }
 
 class Player {
-  constructor(username, { host, port }) {
+  constructor(username, { host, port, server = null }) {
     this.username = username;
     this.chat = [];
     this.disconnect = null;
+    this.disconnectFromKick = false;
     this.rawDisconnect = null;
     this.ended = false;
+    // Where this session starts in the server log, so a reused name never matches an older line.
+    this.server = server;
+    this.logFrom = server ? server.mark() : 0;
     this.error = null;
     this.spawned = false;
     this.bot = mineflayer.createBot({
@@ -77,10 +81,10 @@ class Player {
       this.spawned = true;
     });
     this.bot.on('kicked', (reason) => {
-      this.record(reason);
+      this.record(reason, { fromKick: true });
     });
     this.bot.on('end', (reason) => {
-      this.record(reason);
+      this.record(reason, { fromKick: false });
     });
     this.bot.on('error', (err) => {
       this.error = this.error ?? err.message;
@@ -88,14 +92,36 @@ class Player {
   }
 
   /**
-   * Remembers a disconnect. The raw payload is kept too: if a future protocol change breaks
-   * the decoder, a scenario should fail with something inspectable rather than hang.
+   * Remembers a disconnect. A kick's reason is what the server said, so it always beats a
+   * transport-level reason such as "socketClosed": on a fast machine the socket can report closing
+   * before the kick packet has been read. The raw payload is kept too, so that if a protocol change
+   * breaks the decoder a scenario fails with something inspectable rather than hanging.
    */
-  record(reason) {
+  record(reason, { fromKick }) {
     this.ended = true;
     this.rawDisconnect = this.rawDisconnect ?? reason;
     const text = flatten(reason);
-    if (text && !this.disconnect) this.disconnect = text;
+    if (!text) return;
+    if (fromKick && !this.disconnectFromKick) {
+      this.disconnect = text;
+      this.disconnectFromKick = true;
+    } else if (!this.disconnect) {
+      this.disconnect = text;
+    }
+  }
+
+  /**
+   * Why the server says it dropped this player, from its own log. The server decides the reason,
+   * so this is the authority when the client never got to read the kick packet at all. The first
+   * line is enough: Paper logs a multi-line reason with its first line on the same line.
+   */
+  serverDisconnectReason() {
+    if (!this.server) return null;
+    const pattern = new RegExp(
+      `(?:${this.username}(?: \\([^)]*\\))? lost connection: |Disconnecting ${this.username} \\([^)]*\\): )(.*)`,
+    );
+    const match = this.server.matchLog(pattern, this.logFrom);
+    return match ? match[1] : null;
   }
 
   /** Resolves once the server has either let us in or thrown us out. */
@@ -127,12 +153,26 @@ class Player {
     });
   }
 
+  /**
+   * Resolves with every account of why the player was dropped: the client's reason, plus the
+   * server's own log line when a server was given, so a check like
+   * {@code reason.includes('Too many wrong codes.')} holds whichever side managed to record it.
+   */
   async awaitDisconnect(timeout = 45000) {
     await this.waitWithContext(() => this.ended, {
       timeout,
       describe: `${this.username} to be disconnected`,
     });
-    return this.disconnect || '(disconnected with no decodable reason)';
+    let serverSide = null;
+    if (this.server) {
+      // The server logs the disconnect a moment after the socket goes; give it time to land.
+      serverSide = await waitFor(() => this.serverDisconnectReason(), {
+        timeout: 3000,
+        describe: `the server to log why ${this.username} left`,
+      }).catch(() => null);
+    }
+    const parts = [this.disconnect, serverSide && `server: ${serverSide}`].filter(Boolean);
+    return parts.length ? parts.join(' | ') : '(disconnected with no decodable reason)';
   }
 
   say(message) {

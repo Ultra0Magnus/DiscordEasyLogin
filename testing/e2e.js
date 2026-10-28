@@ -77,7 +77,8 @@ async function main() {
       server,
       webhook,
       config,
-      connect: { host: '127.0.0.1', port: MC_PORT },
+      // The server goes with the connection details so a player can read why it was dropped.
+      connect: { host: '127.0.0.1', port: MC_PORT, server },
     }, { only: ONLY });
   } finally {
     await server.stop().catch(() => server.kill());
