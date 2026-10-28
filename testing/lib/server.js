@@ -17,7 +17,7 @@ const { waitFor, delay } = require('./client');
 const MC_VERSION = process.env.DISCORDEASYLOGIN_TEST_MC_VERSION || '26.1.2';
 const FILL_API = `https://fill.papermc.io/v3/projects/paper/versions/${MC_VERSION}/builds/latest`;
 const MIN_JAVA = 25;
-const USER_AGENT = 'Ultra0Magnus/discordeasylogin-tests (github.com/Ultra0Magnus/easyguard)';
+const USER_AGENT = 'Ultra0Magnus/discordeasylogin-tests (github.com/Ultra0Magnus/DiscordEasyLogin)';
 
 const stripColor = (line) => line.replace(/\u001b\[[0-9;]*m/g, '');
 

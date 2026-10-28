@@ -4,7 +4,7 @@ main: io.github.ultra0magnus.discordeasylogin.DiscordEasyLoginPlugin
 api-version: '26.1'
 description: Requires a single-use code posted to Discord before a player may play.
 author: Ultra0Magnus
-website: https://github.com/Ultra0Magnus/easyguard
+website: https://github.com/Ultra0Magnus/DiscordEasyLogin
 load: POSTWORLD
 permissions:
   discordeasylogin.admin:
