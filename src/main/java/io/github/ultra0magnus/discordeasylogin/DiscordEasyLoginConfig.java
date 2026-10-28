@@ -1,4 +1,4 @@
-package io.github.ultra0magnus.easyguard;
+package io.github.ultra0magnus.discordeasylogin;
 
 import java.net.URI;
 import java.time.Duration;
@@ -12,7 +12,7 @@ import org.bukkit.configuration.file.FileConfiguration;
  * A validation failure is fatal on purpose: the plugin locks the server down rather than
  * running with a gate it cannot trust.
  */
-public record EasyGuardConfig(
+public record DiscordEasyLoginConfig(
         boolean enabled,
         URI webhookEndpoint,
         String webhookUsername,
@@ -52,7 +52,10 @@ public record EasyGuardConfig(
             String discordTemplate) {
     }
 
-    public static final String WEBHOOK_ENV_VAR = "EASYGUARD_DISCORD_WEBHOOK";
+    public static final String WEBHOOK_ENV_VAR = "DISCORDEASYLOGIN_WEBHOOK";
+
+    /** The variable from when this plugin was called EasyGuard, still honoured so an upgrade does not break. */
+    public static final String LEGACY_WEBHOOK_ENV_VAR = "EASYGUARD_DISCORD_WEBHOOK";
 
     /** Discord user IDs are snowflakes: 17 to 20 digits. */
     private static final Pattern DISCORD_USER_ID = Pattern.compile("\\d{17,20}");
@@ -60,11 +63,11 @@ public record EasyGuardConfig(
     /** Discord rejects an allowed_mentions.users list longer than this. */
     private static final int MAX_PING_USERS = 100;
 
-    public static EasyGuardConfig load(FileConfiguration cfg) {
+    public static DiscordEasyLoginConfig load(FileConfiguration cfg) {
         boolean enabled = cfg.getBoolean("enabled", true);
         boolean allowNonDiscordHost = cfg.getBoolean("discord.allow_non_discord_host", false);
 
-        String envUrl = System.getenv(WEBHOOK_ENV_VAR);
+        String envUrl = webhookFromEnvironment();
         String rawUrl = envUrl != null && !envUrl.isBlank() ? envUrl : cfg.getString("discord.webhook_url", "");
         URI endpoint = DiscordWebhookNotifier.validateEndpoint(rawUrl, allowNonDiscordHost);
 
@@ -75,10 +78,10 @@ public record EasyGuardConfig(
         int maxPerMinute = requireRange(cfg.getInt("code.max_per_minute", 20), 1, 500, "code.max_per_minute");
         int trustHours = requireRange(cfg.getInt("trust.duration_hours", 24), 0, 24 * 365, "trust.duration_hours");
 
-        return new EasyGuardConfig(
+        return new DiscordEasyLoginConfig(
                 enabled,
                 endpoint,
-                webhookUsername(cfg.getString("discord.username", "EasyGuard")),
+                webhookUsername(cfg.getString("discord.username", "EasyLogin")),
                 Duration.ofSeconds(requireRange(cfg.getInt("discord.timeout_seconds", 5), 1, 30, "discord.timeout_seconds")),
                 cfg.getString("discord.mention_prefix", ""),
                 loadPingUserIds(cfg),
@@ -99,7 +102,7 @@ public record EasyGuardConfig(
 
     private static Messages loadMessages(FileConfiguration cfg) {
         return new Messages(
-                msg(cfg, "prompt", "<gold>EasyGuard</gold> <gray>|</gray> <white>A single-use code was sent to Discord. Paste it in chat to play.</white>"),
+                msg(cfg, "prompt", "<gold>DiscordEasyLogin</gold> <gray>|</gray> <white>A single-use code was sent to Discord. Paste it in chat to play.</white>"),
                 msg(cfg, "prompt_waiting", "<gray>Contacting Discord...</gray>"),
                 msg(cfg, "success", "<green>Verified. Welcome, <white><player></white>!</green>"),
                 msg(cfg, "wrong_code", "<red>Wrong code.</red> <gray><attempts> attempt(s) left.</gray>"),
@@ -112,10 +115,19 @@ public record EasyGuardConfig(
                 msg(cfg, "kick_out_of_attempts", "<red>Too many wrong codes.</red><newline><gray>Reconnect to request a new one.</gray>"),
                 msg(cfg, "kick_unavailable", "<red>Verification is unavailable right now.</red><newline><gray>The server could not reach Discord. Try again shortly.</gray>"),
                 msg(cfg, "kick_rate_limited", "<red>Too many verification requests.</red><newline><gray>Wait a moment and reconnect.</gray>"),
-                msg(cfg, "kick_lockdown", "<red>This server is locked down.</red><newline><gray>EasyGuard could not start, so logins are blocked.</gray>"),
+                msg(cfg, "kick_lockdown", "<red>This server is locked down.</red><newline><gray>DiscordEasyLogin could not start, so logins are blocked.</gray>"),
                 msg(cfg, "kick_manual_lockdown", "<red>This server is locked down.</red><newline><gray>An administrator has paused all logins.</gray>"),
                 cfg.getString("messages.discord_template",
-                        "**Join request**\nPlayer: `<player>`\nUUID: `<uuid>`\nIP: `<ip>`\nCode: **<code>**\nExpires in <ttl>."));
+                        "**Join request**\nPlayer: `<player>`\nUUID: `<uuid>`\nCode: **<code>**\nExpires in <ttl>."));
+    }
+
+    /** The webhook URL from the environment, preferring the current variable over the legacy one. */
+    static String webhookFromEnvironment() {
+        String current = System.getenv(WEBHOOK_ENV_VAR);
+        if (current != null && !current.isBlank()) {
+            return current;
+        }
+        return System.getenv(LEGACY_WEBHOOK_ENV_VAR);
     }
 
     /**

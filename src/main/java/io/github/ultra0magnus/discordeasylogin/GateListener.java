@@ -1,4 +1,4 @@
-package io.github.ultra0magnus.easyguard;
+package io.github.ultra0magnus.discordeasylogin;
 
 import com.destroystokyo.paper.event.server.AsyncTabCompleteEvent;
 import io.papermc.paper.event.player.AsyncChatEvent;
@@ -68,7 +68,7 @@ public final class GateListener implements Listener {
     private static final Component UNAVAILABLE =
             Component.text("Verification is unavailable right now.", NamedTextColor.RED);
 
-    private final EasyGuardPlugin plugin;
+    private final DiscordEasyLoginPlugin plugin;
     private final GateService gate;
     private final Map<UUID, Long> lastNotice = new ConcurrentHashMap<>();
 
@@ -76,7 +76,7 @@ public final class GateListener implements Listener {
     private final Map<UUID, String> legacyText = new ConcurrentHashMap<>();
     private volatile boolean legacyGuardRegistered;
 
-    public GateListener(EasyGuardPlugin plugin, GateService gate) {
+    public GateListener(DiscordEasyLoginPlugin plugin, GateService gate) {
         this.plugin = plugin;
         this.gate = gate;
     }
@@ -93,10 +93,10 @@ public final class GateListener implements Listener {
         } catch (RuntimeException e) {
             // An exception escaping a join handler does not stop the join, so without this an
             // unexpected bug would let the player in with no code. Fail closed instead.
-            plugin.getLogger().log(Level.SEVERE, "EasyGuard could not check " + player.getName()
+            plugin.getLogger().log(Level.SEVERE, "DiscordEasyLogin could not check " + player.getName()
                     + " - refusing the login rather than letting them in unverified", e);
             event.joinMessage(null);
-            EasyGuardConfig cfg = plugin.configOrNull();
+            DiscordEasyLoginConfig cfg = plugin.configOrNull();
             player.kick(cfg == null ? UNAVAILABLE : Text.render(cfg.messages().kickUnavailable()),
                     PlayerKickEvent.Cause.PLUGIN);
             return;
@@ -228,7 +228,7 @@ public final class GateListener implements Listener {
         String[] parts = message.split("\\s+");
         String label = parts[0].toLowerCase(Locale.ROOT);
         event.setCancelled(true);
-        if (label.equals("/verify") || label.equals("/easyguard:verify")) {
+        if (label.equals("/verify") || label.equals("/discordeasylogin:verify")) {
             // Handled here rather than passed on, so the code never reaches the command log, other
             // plugins' command listeners, or another plugin that also registered "/verify".
             event.setMessage(label);

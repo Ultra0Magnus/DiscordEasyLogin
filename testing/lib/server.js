@@ -14,9 +14,10 @@ const { pipeline } = require('stream/promises');
 
 const { waitFor, delay } = require('./client');
 
-const MC_VERSION = process.env.EASYGUARD_TEST_MC_VERSION || '26.1.2';
+const MC_VERSION = process.env.DISCORDEASYLOGIN_TEST_MC_VERSION || '26.1.2';
 const FILL_API = `https://fill.papermc.io/v3/projects/paper/versions/${MC_VERSION}/builds/latest`;
 const MIN_JAVA = 25;
+const USER_AGENT = 'Ultra0Magnus/discordeasylogin-tests (github.com/Ultra0Magnus/easyguard)';
 
 const stripColor = (line) => line.replace(/\u001b\[[0-9;]*m/g, '');
 
@@ -26,7 +27,7 @@ const stripColor = (line) => line.replace(/\u001b\[[0-9;]*m/g, '');
  */
 function resolveJava() {
   const candidates = [
-    process.env.EASYGUARD_JAVA,
+    process.env.DISCORDEASYLOGIN_JAVA,
     process.env.JAVA_HOME && path.join(process.env.JAVA_HOME, 'bin', 'java'),
     'java',
   ].filter(Boolean);
@@ -46,7 +47,7 @@ function resolveJava() {
   throw new Error(
     `Paper ${MC_VERSION} needs Java ${MIN_JAVA} or newer, and none was found.\n`
       + `  tried: ${tried.join('\n         ')}\n`
-      + '  Fix: install a JDK 25 and set EASYGUARD_JAVA=/path/to/jdk-25/bin/java',
+      + '  Fix: install a JDK 25 and set DISCORDEASYLOGIN_JAVA=/path/to/jdk-25/bin/java',
   );
 }
 
@@ -68,8 +69,24 @@ async function requireFreePort(port, label, envVar) {
   }
 }
 
-function sha256(file) {
-  return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+function digest(file, algorithm) {
+  return crypto.createHash(algorithm).update(fs.readFileSync(file)).digest('hex');
+}
+
+/** Downloads to the cache unless a copy with the right checksum is already there. */
+async function downloadVerified(url, target, algorithm, expected, label) {
+  if (fs.existsSync(target) && digest(target, algorithm) === expected) return target;
+  const partial = `${target}.part`;
+  const response = await fetch(url, { headers: { 'User-Agent': USER_AGENT } });
+  if (!response.ok) throw new Error(`${label} download failed with HTTP ${response.status}`);
+  await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(partial));
+  const actual = digest(partial, algorithm);
+  if (actual !== expected) {
+    fs.rmSync(partial, { force: true });
+    throw new Error(`${label} download is corrupt: expected ${algorithm} ${expected}, got ${actual}`);
+  }
+  fs.renameSync(partial, target);
+  return target;
 }
 
 /**
@@ -77,10 +94,10 @@ function sha256(file) {
  * content-addressed and cannot be constructed by hand, so the metadata call is required.
  */
 async function ensurePaperJar(cacheDir) {
-  const override = process.env.EASYGUARD_PAPER_JAR;
+  const override = process.env.DISCORDEASYLOGIN_PAPER_JAR;
   if (override) {
     if (!fs.existsSync(override)) {
-      throw new Error(`EASYGUARD_PAPER_JAR points at ${override}, which does not exist.`);
+      throw new Error(`DISCORDEASYLOGIN_PAPER_JAR points at ${override}, which does not exist.`);
     }
     return override;
   }
@@ -96,26 +113,44 @@ async function ensurePaperJar(cacheDir) {
     throw new Error(
       `Could not reach the Paper download API (${err.message}).\n`
         + '  Fix: check your network, or download paper yourself and set '
-        + 'EASYGUARD_PAPER_JAR=/path/to/paper.jar',
+        + 'DISCORDEASYLOGIN_PAPER_JAR=/path/to/paper.jar',
     );
   }
 
-  const target = path.join(cacheDir, download.name);
-  const expected = download.checksums.sha256;
-  if (fs.existsSync(target) && sha256(target) === expected) return target;
+  return downloadVerified(download.url, path.join(cacheDir, download.name), 'sha256',
+    download.checksums.sha256, 'Paper');
+}
 
-  const partial = `${target}.part`;
-  const response = await fetch(download.url);
-  if (!response.ok) throw new Error(`Paper download failed with HTTP ${response.status}`);
-  await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(partial));
-
-  const actual = sha256(partial);
-  if (actual !== expected) {
-    fs.rmSync(partial, { force: true });
-    throw new Error(`Paper download is corrupt: expected sha256 ${expected}, got ${actual}`);
+/**
+ * The scripted client only speaks the protocol versions its library knows, which trails new
+ * Minecraft releases. To test the plugin on a newer server anyway, put ViaVersion and ViaBackwards
+ * on the test server: they translate the older client's connection, while everything the plugin
+ * does still runs on the newer server's real code. Fetched from Modrinth, release builds only, and
+ * checked against the SHA-512 Modrinth publishes.
+ */
+async function ensureProtocolBridge(cacheDir) {
+  fs.mkdirSync(cacheDir, { recursive: true });
+  const jars = [];
+  for (const project of ['viaversion', 'viabackwards']) {
+    const query = `loaders=${encodeURIComponent('["paper"]')}&game_versions=${encodeURIComponent(`["${MC_VERSION}"]`)}`;
+    let file;
+    try {
+      const response = await fetch(`https://api.modrinth.com/v2/project/${project}/version?${query}`,
+        { headers: { 'User-Agent': USER_AGENT } });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const release = (await response.json()).find((version) => version.version_type === 'release');
+      if (!release) throw new Error(`no release of ${project} supports Paper ${MC_VERSION} yet`);
+      file = release.files.find((candidate) => candidate.primary) || release.files[0];
+    } catch (err) {
+      throw new Error(
+        `Could not get ${project} for Paper ${MC_VERSION} (${err.message}).\n`
+          + `  It is needed because the test client cannot speak ${MC_VERSION} directly.`,
+      );
+    }
+    jars.push(await downloadVerified(file.url, path.join(cacheDir, file.filename), 'sha512',
+      file.hashes.sha512, project));
   }
-  fs.renameSync(partial, target);
-  return target;
+  return jars;
 }
 
 class PaperServer {
@@ -145,7 +180,7 @@ class PaperServer {
         'max-players=20',
         'view-distance=4',
         'simulation-distance=4',
-        'motd=EasyGuard end-to-end test',
+        'motd=DiscordEasyLogin end-to-end test',
         '',
       ].join('\n'),
     );
@@ -158,13 +193,13 @@ class PaperServer {
 
   /**
    * Copies extra plugin jars in. The point of the suites is what happens beside your *other*
-   * plugins, which a clean server never shows: point EASYGUARD_EXTRA_PLUGINS at a directory of
+   * plugins, which a clean server never shows: point DISCORDEASYLOGIN_EXTRA_PLUGINS at a directory of
    * jars (or set a single jar path) to reproduce a real plugin set.
    */
   installExtraPlugins(source) {
     if (!source) return [];
     if (!fs.existsSync(source)) {
-      throw new Error(`EASYGUARD_EXTRA_PLUGINS points at ${source}, which does not exist.`);
+      throw new Error(`DISCORDEASYLOGIN_EXTRA_PLUGINS points at ${source}, which does not exist.`);
     }
     const jars = fs.statSync(source).isDirectory()
       ? fs.readdirSync(source).filter((name) => name.endsWith('.jar')).map((n) => path.join(source, n))
@@ -178,7 +213,7 @@ class PaperServer {
   }
 
   writePluginConfig(yaml) {
-    const folder = path.join(this.dir, 'plugins', 'EasyGuard');
+    const folder = path.join(this.dir, 'plugins', 'DiscordEasyLogin');
     fs.mkdirSync(folder, { recursive: true });
     fs.writeFileSync(path.join(folder, 'config.yml'), yaml);
   }
@@ -194,7 +229,7 @@ class PaperServer {
   }
 
   clearTrustedSessions() {
-    fs.rmSync(path.join(this.dir, 'plugins', 'EasyGuard', 'sessions.properties'), { force: true });
+    fs.rmSync(path.join(this.dir, 'plugins', 'DiscordEasyLogin', 'sessions.properties'), { force: true });
   }
 
   async start({ expectLockdown = false } = {}) {
@@ -222,10 +257,10 @@ class PaperServer {
     });
 
     await this.awaitLog(/Done \(/, { timeout: 240000, describe: 'the server to finish starting' });
-    const expected = expectLockdown ? /LOCKED DOWN/ : /EasyGuard active: codes go to/;
+    const expected = expectLockdown ? /LOCKED DOWN/ : /DiscordEasyLogin active: codes go to/;
     await this.awaitLog(expected, {
       timeout: 15000,
-      describe: `EasyGuard to report ${expectLockdown ? 'lockdown' : 'that it is active'}`,
+      describe: `DiscordEasyLogin to report ${expectLockdown ? 'lockdown' : 'that it is active'}`,
       from: 0,
     });
   }
@@ -304,4 +339,6 @@ class PaperServer {
   }
 }
 
-module.exports = { PaperServer, resolveJava, ensurePaperJar, requireFreePort, MC_VERSION };
+module.exports = {
+  PaperServer, resolveJava, ensurePaperJar, ensureProtocolBridge, requireFreePort, MC_VERSION,
+};

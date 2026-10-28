@@ -1,4 +1,4 @@
-package io.github.ultra0magnus.easyguard;
+package io.github.ultra0magnus.discordeasylogin;
 
 import io.papermc.paper.command.brigadier.BasicCommand;
 import io.papermc.paper.command.brigadier.CommandSourceStack;
@@ -11,10 +11,10 @@ import org.jetbrains.annotations.NotNull;
 /** {@code /verify <code>} - the only command an unverified player may run. */
 public final class VerifyCommand implements BasicCommand {
 
-    private final EasyGuardPlugin plugin;
+    private final DiscordEasyLoginPlugin plugin;
     private final GateService gate;
 
-    public VerifyCommand(EasyGuardPlugin plugin, GateService gate) {
+    public VerifyCommand(DiscordEasyLoginPlugin plugin, GateService gate) {
         this.plugin = plugin;
         this.gate = gate;
     }

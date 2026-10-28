@@ -24,17 +24,26 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: EasyGuard-jar
-          path: target/EasyGuard-*.jar
+          name: DiscordEasyLogin-jar
+          path: target/DiscordEasyLogin-*.jar
           if-no-files-found: error
 
   server:
     # Both suites boot a real Paper server and drive scripted players through it, including the
     # paths that lock the server down. Nothing touches Discord: the webhook is a local mock.
-    name: End-to-end and adversarial suites
+    # Run once per supported Paper version: this matrix is what backs the versions the listings
+    # claim. Versions newer than the test client speaks are reached through ViaBackwards.
+    name: Suites on Paper ${{ matrix.paper }}
     needs: unit
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # Not 26.3 yet: ViaVersion 5.12.2 can't bridge the 26.1.2 test clients to it (testing/README.md).
+        paper: ['26.1.2', '26.2']
+    env:
+      DISCORDEASYLOGIN_TEST_MC_VERSION: ${{ matrix.paper }}
     steps:
       - uses: actions/checkout@v4
 
@@ -50,11 +59,11 @@ jobs:
           cache: npm
           cache-dependency-path: testing/package-lock.json
 
-      - name: Cache the Paper server jar
+      - name: Cache the Paper server and protocol-bridge jars
         uses: actions/cache@v4
         with:
           path: testing/.cache
-          key: paper-${{ hashFiles('testing/lib/server.js') }}
+          key: paper-${{ matrix.paper }}-${{ hashFiles('testing/lib/server.js') }}
 
       - run: mvn -B -q package -DskipTests
 
@@ -74,6 +83,6 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: test-server-logs
+          name: test-server-logs-${{ matrix.paper }}
           path: testing/.server*/logs/
           if-no-files-found: ignore

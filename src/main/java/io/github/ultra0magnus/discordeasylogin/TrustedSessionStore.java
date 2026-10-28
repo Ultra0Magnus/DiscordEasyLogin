@@ -1,4 +1,4 @@
-package io.github.ultra0magnus.easyguard;
+package io.github.ultra0magnus.discordeasylogin;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -114,7 +114,7 @@ public final class TrustedSessionStore {
             try (FileChannel channel = FileChannel.open(tmp, StandardOpenOption.CREATE,
                     StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
                  OutputStream out = Channels.newOutputStream(channel)) {
-                props.store(out, "EasyGuard trusted sessions - uuid=expiryEpochMillis");
+                props.store(out, "DiscordEasyLogin trusted sessions - uuid=expiryEpochMillis");
                 out.flush();
                 // On disk before the rename, so a crash cannot leave an empty file in its place.
                 channel.force(true);

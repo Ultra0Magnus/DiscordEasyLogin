@@ -14,7 +14,7 @@ function findPluginJar() {
   const jars = fs.existsSync(target)
     ? fs
       .readdirSync(target)
-      .filter((name) => /^EasyGuard-.*\.jar$/.test(name) && !name.includes('original'))
+      .filter((name) => /^DiscordEasyLogin-.*\.jar$/.test(name) && !name.includes('original'))
       .map((name) => path.join(target, name))
     : [];
   if (!jars.length) {
@@ -77,6 +77,19 @@ function brokenConfig() {
   return ['enabled: true', 'discord:', '  webhook_url: "not a url at all"', ''].join('\n');
 }
 
+/**
+ * When the server runs a newer Minecraft than the client speaks, install the protocol bridge so
+ * the suites can still connect. Returns the jar names, for the startup banner.
+ */
+async function installProtocolBridgeIfNeeded(server, cacheDir) {
+  const { ensureProtocolBridge, MC_VERSION } = require('./server');
+  const { CLIENT_VERSION } = require('./client');
+  if (MC_VERSION === CLIENT_VERSION) return [];
+  const jars = await ensureProtocolBridge(cacheDir);
+  for (const jar of jars) server.installPlugin(jar);
+  return jars.map((jar) => path.basename(jar));
+}
+
 /** Signals and crashes must not leave a Java process holding the port. */
 function registerEmergencyStop(server, webhook) {
   const stop = () => {
@@ -106,7 +119,7 @@ async function runScenarios(scenarios, context, { only = '' } = {}) {
   const selected = only
     ? scenarios.filter((scenario) => scenario.name.toLowerCase().includes(only.toLowerCase()))
     : scenarios;
-  if (!selected.length) throw new Error(`EASYGUARD_ONLY="${only}" matched no scenario.`);
+  if (!selected.length) throw new Error(`DISCORDEASYLOGIN_ONLY="${only}" matched no scenario.`);
 
   const results = [];
   for (const scenario of selected) {
@@ -167,6 +180,7 @@ module.exports = {
   requireDependencies,
   pluginConfig,
   brokenConfig,
+  installProtocolBridgeIfNeeded,
   registerEmergencyStop,
   runScenarios,
   report,

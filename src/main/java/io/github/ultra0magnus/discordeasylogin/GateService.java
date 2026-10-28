@@ -1,4 +1,4 @@
-package io.github.ultra0magnus.easyguard;
+package io.github.ultra0magnus.discordeasylogin;
 
 import java.io.IOException;
 import java.util.Locale;
@@ -27,10 +27,10 @@ public final class GateService {
     private record UsedCode(String code, long until) {
     }
 
-    private final EasyGuardPlugin plugin;
+    private final DiscordEasyLoginPlugin plugin;
     private final Map<UUID, UsedCode> recentlyUsed = new ConcurrentHashMap<>();
 
-    public GateService(EasyGuardPlugin plugin) {
+    public GateService(DiscordEasyLoginPlugin plugin) {
         this.plugin = plugin;
     }
 
@@ -38,8 +38,8 @@ public final class GateService {
      * @return true if the player was put into limbo (and the join message should be suppressed)
      */
     public boolean onJoin(Player player) {
-        EasyGuardConfig cfg = plugin.config();
-        if (!cfg.enabled() || player.hasPermission("easyguard.bypass")) {
+        DiscordEasyLoginConfig cfg = plugin.config();
+        if (!cfg.enabled() || player.hasPermission("discordeasylogin.bypass")) {
             return false;
         }
         if (plugin.trustedSessions().isTrusted(player.getUniqueId())) {
@@ -65,7 +65,7 @@ public final class GateService {
     }
 
     private void deliver(Player player, Object session, String code, String address) {
-        EasyGuardConfig cfg = plugin.config();
+        DiscordEasyLoginConfig cfg = plugin.config();
         String body = cfg.discordMentionPrefix()
                 + Text.fill(cfg.messages().discordTemplate(),
                 "player", player.getName(),
@@ -105,7 +105,7 @@ public final class GateService {
 
     /** Handles a code submitted through chat or {@code /verify}. Must run on the main thread. */
     public void submit(Player player, String input) {
-        EasyGuardConfig cfg = plugin.config();
+        DiscordEasyLoginConfig cfg = plugin.config();
         UUID uuid = player.getUniqueId();
         if (!plugin.limbo().isHeld(uuid)) {
             player.sendMessage(Text.render(cfg.messages().noPending()));
@@ -123,13 +123,13 @@ public final class GateService {
                     Bukkit.broadcast(Component.translatable("multiplayer.player.joined", player.displayName())
                             .color(NamedTextColor.YELLOW));
                 }
-                plugin.getLogger().info(player.getName() + " passed EasyGuard verification.");
+                plugin.getLogger().info(player.getName() + " passed DiscordEasyLogin verification.");
             }
             case WRONG_CODE -> player.sendMessage(Text.render(cfg.messages().wrongCode(),
                     "attempts", Integer.toString(plugin.verification().attemptsLeft(uuid))));
             case EXPIRED -> player.kick(Text.render(cfg.messages().expired()), PlayerKickEvent.Cause.PLUGIN);
             case OUT_OF_ATTEMPTS -> {
-                plugin.getLogger().warning(player.getName() + " was kicked after too many wrong EasyGuard codes.");
+                plugin.getLogger().warning(player.getName() + " was kicked after too many wrong DiscordEasyLogin codes.");
                 player.kick(Text.render(cfg.messages().kickOutOfAttempts()), PlayerKickEvent.Cause.PLUGIN);
             }
             case NO_PENDING -> player.sendMessage(Text.render(cfg.messages().noPending()));
@@ -163,7 +163,7 @@ public final class GateService {
     }
 
     private void onTimeout(Player player) {
-        EasyGuardConfig cfg = plugin.config();
+        DiscordEasyLoginConfig cfg = plugin.config();
         plugin.verification().cancel(player.getUniqueId());
         if (player.isConnected()) {
             player.kick(Text.render(cfg.messages().kickTimeout()), PlayerKickEvent.Cause.PLUGIN);

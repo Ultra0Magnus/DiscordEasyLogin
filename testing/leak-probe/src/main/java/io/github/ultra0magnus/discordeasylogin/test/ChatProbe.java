@@ -1,4 +1,4 @@
-package io.github.ultra0magnus.easyguard.test;
+package io.github.ultra0magnus.discordeasylogin.test;
 
 import io.papermc.paper.event.player.AsyncChatEvent;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
@@ -11,7 +11,7 @@ import org.bukkit.plugin.java.JavaPlugin;
  * Test-only plugin. Stands in for a chat-bridge plugin (DiscordSRV and friends): it listens at
  * MONITOR priority and does NOT ignore cancelled events, which is the worst realistic case.
  *
- * EasyGuard cancels an unverified player's chat at LOWEST priority, but cancelling does not stop
+ * DiscordEasyLogin cancels an unverified player's chat at LOWEST priority, but cancelling does not stop
  * later listeners from seeing the event. If this probe can read the message, a real bridge could
  * forward a verification code somewhere it does not belong.
  *
@@ -37,7 +37,7 @@ public final class ChatProbe extends JavaPlugin implements Listener {
      * listens to it, Paper fires it before the modern one, so this is where an older bridge sees
      * the message.
      *
-     * NORMAL, not LOWEST: EasyGuard's guard for this event sits at LOWEST, and a listener at that
+     * NORMAL, not LOWEST: DiscordEasyLogin's guard for this event sits at LOWEST, and a listener at that
      * same priority registered before it would run first. That case is documented as a limit; this
      * probe checks every priority a real bridge uses.
      */

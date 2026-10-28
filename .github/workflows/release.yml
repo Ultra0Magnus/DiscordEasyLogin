@@ -38,16 +38,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          JAR="target/EasyGuard-${VERSION}.jar"
+          JAR="target/DiscordEasyLogin-${VERSION}.jar"
           SHA=$(sha256sum "$JAR" | cut -d' ' -f1)
           cat > notes.md <<EOF
-          EasyGuard ${VERSION} for Paper 26.1.2 (Java 25).
+          DiscordEasyLogin ${VERSION} for Paper 26.1.2 and 26.2 (Java 25).
 
-          Drop \`EasyGuard-${VERSION}.jar\` into \`plugins/\` and see the README for setup.
+          Drop \`DiscordEasyLogin-${VERSION}.jar\` into \`plugins/\` and see the README for setup.
 
           SHA-256: \`${SHA}\`
           EOF
           gh release create "${GITHUB_REF_NAME}" "$JAR" \
-            --title "EasyGuard ${VERSION}" \
+            --title "DiscordEasyLogin ${VERSION}" \
             --notes-file notes.md \
             --verify-tag

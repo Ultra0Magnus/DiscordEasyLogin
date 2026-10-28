@@ -5,7 +5,9 @@
 
 const mineflayer = require('mineflayer');
 
-const VERSION = process.env.EASYGUARD_TEST_MC_VERSION || '26.1.2';
+// The protocol the scripted client speaks: the newest one its library knows. A newer *server*
+// (DISCORDEASYLOGIN_TEST_MC_VERSION) is reached through ViaBackwards; see ensureProtocolBridge.
+const CLIENT_VERSION = process.env.DISCORDEASYLOGIN_TEST_CLIENT_VERSION || '26.1.2';
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -72,7 +74,7 @@ class Player {
       host,
       port,
       username,
-      version: VERSION,
+      version: CLIENT_VERSION,
       auth: 'offline',
       hideErrors: true,
     });
@@ -244,4 +246,4 @@ async function attemptJoin(username, options) {
   return player;
 }
 
-module.exports = { Player, join, attemptJoin, waitFor, delay, flatten };
+module.exports = { Player, join, attemptJoin, waitFor, delay, flatten, CLIENT_VERSION };

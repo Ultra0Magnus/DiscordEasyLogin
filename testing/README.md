@@ -1,12 +1,12 @@
-# EasyGuard tests
+# DiscordEasyLogin tests
 
-Two suites, both against a throwaway Paper 26.1.2 server that they create, configure and
+Two suites, both against a throwaway Paper server (26.1.2 unless you pick another) that they create, configure and
 delete. Both point the plugin at a **local mock webhook**, so nothing touches a real server or
 the real Discord.
 
 | Suite | What it does |
 |---|---|
-| `npm run e2e` | Exercises the gate: does it work, and does it fail closed? 11 scenarios |
+| `npm run e2e` | Exercises the gate: does it work, and does it fail closed? Also upgrading from the EasyGuard name. 12 scenarios |
 | `npm run adversarial` | Tries to *defeat* the gate: bypasses, stolen codes, floods, item use, races, and leaks to other plugins. 15 scenarios |
 
 ## Run them
@@ -35,9 +35,9 @@ Requires **Java 25** (Paper 26.1+ will not run on anything older) and a built pl
 | verification timeout | An unanswered join cannot occupy the server indefinitely |
 | Discord unreachable | The player is **held rather than waved through**, the code is written to the server console, and that console code still verifies. This is the escape hatch you would actually use during a Discord outage |
 | reload mid-verification | A config reload keeps the code that is already sitting in Discord valid, instead of stranding the player until they time out |
-| manual lockdown | `/easyguard lockdown on` survives a reload, says why it is denying logins, and a typo like `lockdown of` cannot switch it off |
+| manual lockdown | `/discordeasylogin lockdown on` survives a reload, says why it is denying logins, and a typo like `lockdown of` cannot switch it off |
 | broken config on reload | A bad config blocks the door instead of silently leaving it open, and fixing the config reopens it **without a restart** |
-| broken config at startup | The worst case — the plugin cannot configure itself at boot, and every login is denied rather than the server running unprotected. **`/easyguard lockdown off` does not change that**: it once did, and the next player got in with no code |
+| broken config at startup | The worst case — the plugin cannot configure itself at boot, and every login is denied rather than the server running unprotected. **`/discordeasylogin lockdown off` does not change that**: it once did, and the next player got in with no code |
 | recovery | A fixed config plus a restart restores normal joins: **you can always get back in** |
 
 ## What `npm run adversarial` proves
@@ -47,7 +47,7 @@ Fifteen attacks, every one of which must fail:
 | Attack | Result |
 |---|---|
 | More joins than `code.max_per_minute` | rate-limit kick, and the webhook stops receiving posts at the cap |
-| Namespaced and built-in commands while unverified (`/minecraft:me`, `/bukkit:help`, `/list`, `/msg`, `/say`, `/easyguard:easyguard status`) | all refused, none produce output |
+| Namespaced and built-in commands while unverified (`/minecraft:me`, `/bukkit:help`, `/list`, `/msg`, `/say`, `/discordeasylogin:discordeasylogin status`) | all refused, none produce output |
 | Player B submits the code issued to player A | refused, and A's code is **not** consumed |
 | A code is reused after its session quit | refused; the rejoin gets a fresh one |
 | Rejoining after an out-of-attempts kick | fresh code, attempts reset, old code dead — a kick launders nothing |
@@ -78,7 +78,7 @@ code of the time, and then fixed. The test stays to keep it fixed.
    session's hold. With `log_code_to_console_on_failure: false`, that was a way in. Holds now
    carry a per-session token.
 3. **Legacy chat listeners saw codes.** When any plugin listens to the deprecated chat event,
-   Paper fires it first, uncancelled. EasyGuard now guards that event too, but only once some
+   Paper fires it first, uncancelled. DiscordEasyLogin now guards that event too, but only once some
    plugin listens to it, so it never switches a server onto the legacy chat path by itself.
 4. **Teleports moved held players**, because `PlayerTeleportEvent` has its own handler list.
 5. **Quitting reset the per-player cooldown**, so a reconnect loop could post a code each time.
@@ -91,22 +91,44 @@ sends a canary string to it, never a real code.
 
 | Environment variable | Default | Purpose |
 |---|---|---|
-| `EASYGUARD_JAVA` | `$JAVA_HOME/bin/java`, then `java` | Which Java to run the server with. Must be 25+ |
-| `EASYGUARD_TEST_PORT` | `25599` | Minecraft port. Deliberately not 25565, so a real server on the default port is left alone |
-| `EASYGUARD_WEBHOOK_PORT` | `8099` | Mock webhook port |
-| `EASYGUARD_PAPER_JAR` | *(downloaded)* | Use a Paper jar you already have instead of downloading |
-| `EASYGUARD_ONLY` | *(all)* | Run only scenarios whose name contains this text, e.g. `EASYGUARD_ONLY=lockdown` |
-| `EASYGUARD_EXTRA_PLUGINS` | *(none)* | A directory of plugin jars (or one jar) to install alongside EasyGuard — see below |
+| `DISCORDEASYLOGIN_JAVA` | `$JAVA_HOME/bin/java`, then `java` | Which Java to run the server with. Must be 25+ |
+| `DISCORDEASYLOGIN_TEST_PORT` | `25599` | Minecraft port. Deliberately not 25565, so a real server on the default port is left alone |
+| `DISCORDEASYLOGIN_WEBHOOK_PORT` | `8099` | Mock webhook port |
+| `DISCORDEASYLOGIN_PAPER_JAR` | *(downloaded)* | Use a Paper jar you already have instead of downloading |
+| `DISCORDEASYLOGIN_ONLY` | *(all)* | Run only scenarios whose name contains this text, e.g. `DISCORDEASYLOGIN_ONLY=lockdown` |
+| `DISCORDEASYLOGIN_EXTRA_PLUGINS` | *(none)* | A directory of plugin jars (or one jar) to install alongside DiscordEasyLogin — see below |
+| `DISCORDEASYLOGIN_TEST_MC_VERSION` | `26.1.2` | Paper version to test on, e.g. `26.2`. See below |
+| `DISCORDEASYLOGIN_TEST_CLIENT_VERSION` | `26.1.2` | Protocol the test clients speak. Only change it once mineflayer supports a newer one |
 | `--keep` | off | Keep the scratch server after a passing run (it is always kept after a failure) |
+
+## Testing other Paper versions
+
+The test clients (mineflayer) only speak 26.1.2. To test on a newer Paper, set
+`DISCORDEASYLOGIN_TEST_MC_VERSION`: the suites then also install
+[ViaVersion](https://modrinth.com/plugin/viaversion) and
+[ViaBackwards](https://modrinth.com/plugin/viabackwards) on the test server — the latest releases
+for that version, downloaded from Modrinth and checked against their SHA-512 — so the old clients
+can join. They are only ever installed on the throwaway server. CI runs both suites on 26.1.2 and
+26.2.
+
+**26.3 can't be tested this way yet.** With ViaVersion/ViaBackwards 5.12.2, a 26.1.2 client on a
+26.3 server is kicked with `Invalid move player packet received` a second or two after joining —
+with no DiscordEasyLogin installed at all. The scenarios that don't need a player to stay online
+(lockdowns, broken configs, the upgrade) pass on 26.3; the rest can't run until Via or mineflayer
+catches up. Until then, 26.3 isn't listed as supported.
+
+```sh
+DISCORDEASYLOGIN_TEST_MC_VERSION=26.2 npm run e2e
+```
 
 ## Testing beside your real plugins
 
-Both suites run on a clean server by default, so neither one tells you how EasyGuard behaves
+Both suites run on a clean server by default, so neither one tells you how DiscordEasyLogin behaves
 next to *your* plugin set — which is where the interesting failures live. Copy your plugin jars
 somewhere and point the suites at them:
 
 ```sh
-EASYGUARD_EXTRA_PLUGINS=~/my-server-plugins npm run adversarial
+DISCORDEASYLOGIN_EXTRA_PLUGINS=~/my-server-plugins npm run adversarial
 ```
 
 Their configs will be defaults, so this catches event-priority and startup interactions rather
@@ -119,7 +141,7 @@ The run exits non-zero and prints, for each failed scenario: the expectation tha
 chat message that player saw, the disconnect reason if there was one, and the last 30 lines of
 the server log. The scratch server is left in `testing/.server/` with its full log in `logs/`.
 
-Re-run just the failure with `EASYGUARD_ONLY`.
+Re-run just the failure with `DISCORDEASYLOGIN_ONLY`.
 
 ## Layout
 
@@ -147,11 +169,11 @@ they are commented as such.
   (`hide_from_others`) but voice runs on its own channel, so they may be able to talk to and
   listen in on nearby players. Check it by hand: join with a second account, do not verify, and
   have someone on voice see whether they can hear you and you them.
-- **Your plugins' real configs.** `EASYGUARD_EXTRA_PLUGINS` installs the jars with defaults,
+- **Your plugins' real configs.** `DISCORDEASYLOGIN_EXTRA_PLUGINS` installs the jars with defaults,
   which catches event-priority and startup interactions but not config-driven behaviour.
-- **`easyguard.bypass`** — needs op or a permissions plugin to mean anything; it is a single
+- **`discordeasylogin.bypass`** — needs op or a permissions plugin to mean anything; it is a single
   permission check in `GateService`. Note that a permissions plugin granting `*` grants it too.
-- **A legacy chat listener at `LOWEST`, registered before EasyGuard's guard.** Same priority means
+- **A legacy chat listener at `LOWEST`, registered before DiscordEasyLogin's guard.** Same priority means
   registration order decides, so it would still see the text first. No realistic bridge listens
   that early; the probe checks `NORMAL`.
 - **Armour stands, fishing rods, mounts and respawn blindness.** Guarded in code, but each would

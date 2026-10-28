@@ -1,4 +1,4 @@
-package io.github.ultra0magnus.easyguard;
+package io.github.ultra0magnus.discordeasylogin;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
