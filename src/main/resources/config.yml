@@ -1,4 +1,4 @@
-# EasyGuard - Discord single-use code gate
+# DiscordEasyLogin - Discord single-use code gate
 #
 # Setting 'enabled: false' turns the gate OFF and players join with no code at all.
 # It is logged loudly at startup so it can never be off by accident unnoticed.
@@ -6,12 +6,12 @@ enabled: true
 
 discord:
   # Channel -> Edit Channel -> Integrations -> Webhooks -> New Webhook -> Copy Webhook URL.
-  # Prefer the EASYGUARD_DISCORD_WEBHOOK environment variable over this field: it overrides
+  # Prefer the DISCORDEASYLOGIN_WEBHOOK environment variable over this field: it overrides
   # the value here and keeps the secret out of your config backups.
   webhook_url: ""
 
-  # Name the messages are posted under.
-  username: "EasyGuard"
+  # Name the messages are posted under. Discord refuses names containing "discord" or "clyde".
+  username: "EasyLogin"
 
   # How long to wait for Discord before treating delivery as failed.
   timeout_seconds: 5
@@ -72,7 +72,7 @@ fallback:
 # All player-facing text is MiniMessage: https://docs.advntr.dev/minimessage/format.html
 # Placeholders: <player>, <attempts>, <code>, <uuid>, <ip>, <ttl>
 messages:
-  prompt: "<gold>EasyGuard</gold> <gray>|</gray> <white>A single-use code was sent to Discord. Paste it in chat to play.</white>"
+  prompt: "<gold>DiscordEasyLogin</gold> <gray>|</gray> <white>A single-use code was sent to Discord. Paste it in chat to play.</white>"
   prompt_waiting: "<gray>Contacting Discord...</gray>"
   success: "<green>Verified. Welcome, <white><player></white>!</green>"
   wrong_code: "<red>Wrong code.</red> <gray><attempts> attempt(s) left.</gray>"
@@ -85,8 +85,10 @@ messages:
   kick_out_of_attempts: "<red>Too many wrong codes.</red><newline><gray>Reconnect to request a new one.</gray>"
   kick_unavailable: "<red>Verification is unavailable right now.</red><newline><gray>The server could not reach Discord. Try again shortly.</gray>"
   kick_rate_limited: "<red>Too many verification requests.</red><newline><gray>Wait a moment and reconnect.</gray>"
-  kick_lockdown: "<red>This server is locked down.</red><newline><gray>EasyGuard could not start, so logins are blocked.</gray>"
+  kick_lockdown: "<red>This server is locked down.</red><newline><gray>DiscordEasyLogin could not start, so logins are blocked.</gray>"
   kick_manual_lockdown: "<red>This server is locked down.</red><newline><gray>An administrator has paused all logins.</gray>"
 
   # Plain Markdown sent to Discord (not MiniMessage). \n makes a new line.
-  discord_template: "**Join request**\nPlayer: `<player>`\nUUID: `<uuid>`\nIP: `<ip>`\nCode: **<code>**\nExpires in <ttl>."
+  # <ip> is available but off by default: it is personal data sent to a third party (Discord), and
+  # behind a tunnel such as playit.gg it is only the tunnel's address anyway. Add "\nIP: `<ip>`" to opt in.
+  discord_template: "**Join request**\nPlayer: `<player>`\nUUID: `<uuid>`\nCode: **<code>**\nExpires in <ttl>."

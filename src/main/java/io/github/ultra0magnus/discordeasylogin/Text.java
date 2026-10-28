@@ -1,4 +1,4 @@
-package io.github.ultra0magnus.easyguard;
+package io.github.ultra0magnus.discordeasylogin;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.MiniMessage;

@@ -1,4 +1,4 @@
-package io.github.ultra0magnus.easyguard;
+package io.github.ultra0magnus.discordeasylogin;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -11,7 +11,7 @@ import org.bukkit.configuration.InvalidConfigurationException;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.junit.jupiter.api.Test;
 
-class EasyGuardConfigTest {
+class DiscordEasyLoginConfigTest {
 
     private static final String WEBHOOK = "https://discord.com/api/webhooks/123/abc";
 
@@ -23,13 +23,13 @@ class EasyGuardConfigTest {
 
     @Test
     void pingsNobodyByDefault() throws Exception {
-        assertEquals(List.of(), EasyGuardConfig.loadPingUserIds(yaml("discord: {}")));
+        assertEquals(List.of(), DiscordEasyLoginConfig.loadPingUserIds(yaml("discord: {}")));
     }
 
     @Test
     void readsPingUserIdsQuotedOrNot() throws Exception {
         // YAML turns an unquoted 18-digit ID into a number; both forms must work.
-        List<String> ids = EasyGuardConfig.loadPingUserIds(yaml("""
+        List<String> ids = DiscordEasyLoginConfig.loadPingUserIds(yaml("""
                 discord:
                   ping_user_ids: ["123456789012345678", 234567890123456789, "123456789012345678"]
                 """));
@@ -42,15 +42,15 @@ class EasyGuardConfigTest {
         for (String bad : List.of("\"@everyone\"", "\"<@123456789012345678>\"", "\"12345\"", "\"here\"")) {
             YamlConfiguration cfg = yaml("discord:\n  ping_user_ids: [" + bad + "]\n");
             IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
-                    () -> EasyGuardConfig.loadPingUserIds(cfg), bad);
+                    () -> DiscordEasyLoginConfig.loadPingUserIds(cfg), bad);
             assertTrue(error.getMessage().contains("discord.ping_user_ids"), error.getMessage());
         }
     }
 
     @Test
     void loadsAMinimalConfigWithSafeDefaults() throws Exception {
-        assumeTrue(System.getenv(EasyGuardConfig.WEBHOOK_ENV_VAR) == null, "the env var overrides the file");
-        EasyGuardConfig cfg = EasyGuardConfig.load(yaml("discord:\n  webhook_url: \"" + WEBHOOK + "\"\n"));
+        assumeTrue(System.getenv(DiscordEasyLoginConfig.WEBHOOK_ENV_VAR) == null, "the env var overrides the file");
+        DiscordEasyLoginConfig cfg = DiscordEasyLoginConfig.load(yaml("discord:\n  webhook_url: \"" + WEBHOOK + "\"\n"));
 
         assertTrue(cfg.enabled());
         assertEquals("discord.com", cfg.webhookEndpoint().getHost());
@@ -63,35 +63,47 @@ class EasyGuardConfigTest {
 
     @Test
     void refusesOutOfRangeValuesRatherThanRunningAWeakGate() throws Exception {
-        assertThrows(IllegalArgumentException.class, () -> EasyGuardConfig.load(yaml(
+        assertThrows(IllegalArgumentException.class, () -> DiscordEasyLoginConfig.load(yaml(
                 "discord:\n  webhook_url: \"" + WEBHOOK + "\"\ncode:\n  length: 3\n")));
-        assertThrows(IllegalArgumentException.class, () -> EasyGuardConfig.load(yaml(
+        assertThrows(IllegalArgumentException.class, () -> DiscordEasyLoginConfig.load(yaml(
                 "discord:\n  webhook_url: \"" + WEBHOOK + "\"\ncode:\n  max_attempts: 50\n")));
     }
 
     @Test
+    void sendsNoIpAddressToDiscordByDefault() throws Exception {
+        assumeTrue(System.getenv(DiscordEasyLoginConfig.WEBHOOK_ENV_VAR) == null, "the env var overrides the file");
+        assumeTrue(System.getenv(DiscordEasyLoginConfig.LEGACY_WEBHOOK_ENV_VAR) == null, "the env var overrides the file");
+        // A player's IP is personal data, and the default message goes to a third party (Discord).
+        DiscordEasyLoginConfig cfg = DiscordEasyLoginConfig.load(yaml("discord:\n  webhook_url: \"" + WEBHOOK + "\"\n"));
+        assertFalse(cfg.messages().discordTemplate().contains("<ip>"), cfg.messages().discordTemplate());
+        assertTrue(cfg.messages().discordTemplate().contains("<code>"), cfg.messages().discordTemplate());
+    }
+
+    @Test
     void refusesCodesShortEnoughToBruteForce() throws Exception {
-        assumeTrue(System.getenv(EasyGuardConfig.WEBHOOK_ENV_VAR) == null, "the env var overrides the file");
+        assumeTrue(System.getenv(DiscordEasyLoginConfig.WEBHOOK_ENV_VAR) == null, "the env var overrides the file");
         // 31^5 codes at the most generous limits falls in under two days; 6 is the floor.
-        assertThrows(IllegalArgumentException.class, () -> EasyGuardConfig.load(yaml(
+        assertThrows(IllegalArgumentException.class, () -> DiscordEasyLoginConfig.load(yaml(
                 "discord:\n  webhook_url: \"" + WEBHOOK + "\"\ncode:\n  length: 5\n")));
-        assertEquals(6, EasyGuardConfig.load(yaml(
+        assertEquals(6, DiscordEasyLoginConfig.load(yaml(
                 "discord:\n  webhook_url: \"" + WEBHOOK + "\"\ncode:\n  length: 6\n")).codeLength());
     }
 
     @Test
     void refusesWebhookNamesDiscordWouldRejectOnEveryPost() {
         for (String bad : List.of("My Discord Bot", "clyde", "", "   ")) {
-            assertThrows(IllegalArgumentException.class, () -> EasyGuardConfig.webhookUsername(bad), bad);
+            assertThrows(IllegalArgumentException.class, () -> DiscordEasyLoginConfig.webhookUsername(bad), bad);
         }
-        assertEquals("EasyGuard", EasyGuardConfig.webhookUsername("  EasyGuard "));
+        assertEquals("EasyLogin", DiscordEasyLoginConfig.webhookUsername("  EasyLogin "));
+        // The plugin's own name contains "discord", so it can never be the webhook name.
+        assertThrows(IllegalArgumentException.class, () -> DiscordEasyLoginConfig.webhookUsername("DiscordEasyLogin"));
     }
 
     @Test
     void refusesAMissingWebhook() throws Exception {
-        assumeTrue(System.getenv(EasyGuardConfig.WEBHOOK_ENV_VAR) == null, "the env var overrides the file");
+        assumeTrue(System.getenv(DiscordEasyLoginConfig.WEBHOOK_ENV_VAR) == null, "the env var overrides the file");
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
-                () -> EasyGuardConfig.load(yaml("enabled: true\n")));
+                () -> DiscordEasyLoginConfig.load(yaml("enabled: true\n")));
         assertFalse(error.getMessage().isBlank());
     }
 }

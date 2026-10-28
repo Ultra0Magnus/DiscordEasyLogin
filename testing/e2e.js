@@ -1,6 +1,6 @@
 'use strict';
 
-// End-to-end test for EasyGuard. Boots a throwaway Paper server with the built plugin, points
+// End-to-end test for DiscordEasyLogin. Boots a throwaway Paper server with the built plugin, points
 // it at a local mock webhook, drives real Minecraft clients through every path the gate has —
 // including the ones that lock the server down — and cleans up after itself.
 //
@@ -14,6 +14,7 @@ const path = require('path');
 
 const { MockWebhook } = require('./lib/webhook');
 const { PaperServer, resolveJava, ensurePaperJar, requireFreePort, MC_VERSION } = require('./lib/server');
+const { CLIENT_VERSION } = require('./lib/client');
 const {
   ROOT,
   TESTING,
@@ -21,6 +22,7 @@ const {
   requireDependencies,
   pluginConfig,
   brokenConfig,
+  installProtocolBridgeIfNeeded,
   registerEmergencyStop,
   runScenarios,
   report,
@@ -30,17 +32,17 @@ const scenarios = require('./scenarios');
 const SERVER_DIR = path.join(TESTING, '.server');
 const CACHE_DIR = path.join(TESTING, '.cache');
 
-const MC_PORT = Number(process.env.EASYGUARD_TEST_PORT || 25599);
-const WEBHOOK_PORT = Number(process.env.EASYGUARD_WEBHOOK_PORT || 8099);
+const MC_PORT = Number(process.env.DISCORDEASYLOGIN_TEST_PORT || 25599);
+const WEBHOOK_PORT = Number(process.env.DISCORDEASYLOGIN_WEBHOOK_PORT || 8099);
 const KEEP = process.argv.includes('--keep');
-const ONLY = process.env.EASYGUARD_ONLY || '';
+const ONLY = process.env.DISCORDEASYLOGIN_ONLY || '';
 
 async function main() {
   requireDependencies();
   const pluginJar = findPluginJar();
   const javaBin = resolveJava();
-  await requireFreePort(MC_PORT, 'Minecraft', 'EASYGUARD_TEST_PORT');
-  await requireFreePort(WEBHOOK_PORT, 'Mock webhook', 'EASYGUARD_WEBHOOK_PORT');
+  await requireFreePort(MC_PORT, 'Minecraft', 'DISCORDEASYLOGIN_TEST_PORT');
+  await requireFreePort(WEBHOOK_PORT, 'Mock webhook', 'DISCORDEASYLOGIN_WEBHOOK_PORT');
 
   console.log(`plugin   ${path.relative(ROOT, pluginJar)}`);
   console.log(`java     ${javaBin}`);
@@ -58,7 +60,9 @@ async function main() {
   const server = new PaperServer({ dir: SERVER_DIR, paperJar, javaBin, port: MC_PORT });
   server.writeBaseFiles();
   server.installPlugin(pluginJar);
-  const extra = server.installExtraPlugins(process.env.EASYGUARD_EXTRA_PLUGINS);
+  const bridge = await installProtocolBridgeIfNeeded(server, CACHE_DIR);
+  if (bridge.length) console.log(`bridge   ${bridge.join(', ')} (client speaks ${CLIENT_VERSION})`);
+  const extra = server.installExtraPlugins(process.env.DISCORDEASYLOGIN_EXTRA_PLUGINS);
   if (extra.length) console.log(`extra    ${extra.join(', ')}`);
   server.writePluginConfig(config.good);
 

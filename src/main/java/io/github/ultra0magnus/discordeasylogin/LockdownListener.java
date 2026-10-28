@@ -1,4 +1,4 @@
-package io.github.ultra0magnus.easyguard;
+package io.github.ultra0magnus.discordeasylogin;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
@@ -8,19 +8,19 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.AsyncPlayerPreLoginEvent;
 
 /**
- * Denies every login while EasyGuard is locked down.
+ * Denies every login while DiscordEasyLogin is locked down.
  *
- * <p>This exists so that a misconfigured or broken EasyGuard blocks the door instead of
+ * <p>This exists so that a misconfigured or broken DiscordEasyLogin blocks the door instead of
  * disappearing: a plugin that fails to start would otherwise leave the server wide open.
  */
 public final class LockdownListener implements Listener {
 
     private static final Component FALLBACK_REASON = Component
-            .text("This server is locked down: EasyGuard could not start.", NamedTextColor.RED);
+            .text("This server is locked down: DiscordEasyLogin could not start.", NamedTextColor.RED);
 
-    private final EasyGuardPlugin plugin;
+    private final DiscordEasyLoginPlugin plugin;
 
-    public LockdownListener(EasyGuardPlugin plugin) {
+    public LockdownListener(DiscordEasyLoginPlugin plugin) {
         this.plugin = plugin;
     }
 
@@ -39,7 +39,7 @@ public final class LockdownListener implements Listener {
         if (!plugin.isLockedDown()) {
             return;
         }
-        EasyGuardConfig cfg = plugin.configOrNull();
+        DiscordEasyLoginConfig cfg = plugin.configOrNull();
         Component reason;
         if (cfg == null) {
             reason = FALLBACK_REASON;

@@ -1,11 +1,11 @@
-package io.github.ultra0magnus.easyguard;
+package io.github.ultra0magnus.discordeasylogin;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.github.ultra0magnus.easyguard.VerificationManager.Outcome;
+import io.github.ultra0magnus.discordeasylogin.VerificationManager.Outcome;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 

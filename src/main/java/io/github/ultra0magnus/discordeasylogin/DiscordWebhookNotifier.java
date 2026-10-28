@@ -1,4 +1,4 @@
-package io.github.ultra0magnus.easyguard;
+package io.github.ultra0magnus.discordeasylogin;
 
 import java.io.IOException;
 import java.net.URI;
@@ -73,7 +73,7 @@ public final class DiscordWebhookNotifier {
             uri = new URI(raw.trim());
         } catch (URISyntaxException e) {
             // Never e.getMessage(): it echoes the whole input, and the input contains the webhook's
-            // secret token. This message goes to the log and to whoever ran /easyguard reload.
+            // secret token. This message goes to the log and to whoever ran /discordeasylogin reload.
             throw new IllegalArgumentException("discord.webhook_url is not a valid URL ("
                     + e.getReason() + (e.getIndex() >= 0 ? " at character " + (e.getIndex() + 1) : "")
                     + "); the URL itself is not shown because it contains a secret");
@@ -145,7 +145,7 @@ public final class DiscordWebhookNotifier {
         HttpRequest request = HttpRequest.newBuilder(endpoint)
                 .timeout(timeout)
                 .header("Content-Type", "application/json")
-                .header("User-Agent", "EasyGuard (Minecraft plugin)")
+                .header("User-Agent", "DiscordEasyLogin (Minecraft plugin)")
                 .POST(HttpRequest.BodyPublishers.ofString(payload, StandardCharsets.UTF_8))
                 .build();
         return client.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));

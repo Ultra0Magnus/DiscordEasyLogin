@@ -1,6 +1,6 @@
 name: LeakProbe
 version: '0.0.1'
-main: io.github.ultra0magnus.easyguard.test.ChatProbe
+main: io.github.ultra0magnus.discordeasylogin.test.ChatProbe
 api-version: '26.1'
-description: Test-only chat observer used by the EasyGuard adversarial suite. Do not deploy.
+description: Test-only chat observer used by the DiscordEasyLogin adversarial suite. Do not deploy.
 load: POSTWORLD

@@ -1,4 +1,4 @@
-package io.github.ultra0magnus.easyguard;
+package io.github.ultra0magnus.discordeasylogin;
 
 import io.papermc.paper.command.brigadier.BasicCommand;
 import io.papermc.paper.command.brigadier.CommandSourceStack;
@@ -18,27 +18,27 @@ import org.bukkit.command.RemoteConsoleCommandSender;
 import org.bukkit.entity.Player;
 import org.jetbrains.annotations.NotNull;
 
-/** {@code /easyguard status|reload|code|trust|lockdown} - administration. */
-public final class EasyGuardCommand implements BasicCommand {
+/** {@code /discordeasylogin status|reload|code|trust|lockdown} - administration. */
+public final class DiscordEasyLoginCommand implements BasicCommand {
 
     private static final List<String> SUBCOMMANDS = List.of("status", "reload", "code", "trust", "lockdown");
 
-    private final EasyGuardPlugin plugin;
+    private final DiscordEasyLoginPlugin plugin;
 
-    public EasyGuardCommand(EasyGuardPlugin plugin) {
+    public DiscordEasyLoginCommand(DiscordEasyLoginPlugin plugin) {
         this.plugin = plugin;
     }
 
     @Override
     public String permission() {
-        return "easyguard.admin";
+        return "discordeasylogin.admin";
     }
 
     @Override
     public void execute(@NotNull CommandSourceStack source, @NotNull String[] args) {
         CommandSender sender = source.getSender();
         if (args.length == 0) {
-            sender.sendMessage(Component.text("/easyguard <status|reload|code|trust|lockdown>", NamedTextColor.GRAY));
+            sender.sendMessage(Component.text("/discordeasylogin <status|reload|code|trust|lockdown>", NamedTextColor.GRAY));
             return;
         }
         switch (args[0].toLowerCase(Locale.ROOT)) {
@@ -52,8 +52,8 @@ public final class EasyGuardCommand implements BasicCommand {
     }
 
     private void status(CommandSender sender) {
-        EasyGuardConfig cfg = plugin.configOrNull();
-        sender.sendMessage(Component.text("EasyGuard status", NamedTextColor.GOLD));
+        DiscordEasyLoginConfig cfg = plugin.configOrNull();
+        sender.sendMessage(Component.text("DiscordEasyLogin status", NamedTextColor.GOLD));
         String lockdown = plugin.isConfigFailed() ? "yes - config failed to load"
                 : plugin.isManualLockdown() ? "yes - turned on by an administrator" : "no";
         sender.sendMessage(line("locked down", lockdown));
@@ -70,9 +70,9 @@ public final class EasyGuardCommand implements BasicCommand {
     }
 
     private void reload(CommandSender sender) {
-        String error = plugin.reloadEasyGuard();
+        String error = plugin.reloadDiscordEasyLogin();
         if (error == null) {
-            sender.sendMessage(Component.text("EasyGuard reloaded.", NamedTextColor.GREEN));
+            sender.sendMessage(Component.text("DiscordEasyLogin reloaded.", NamedTextColor.GREEN));
         } else {
             sender.sendMessage(Component.text("Reload failed, server is now locked down: " + error, NamedTextColor.RED));
         }
@@ -87,7 +87,7 @@ public final class EasyGuardCommand implements BasicCommand {
             return;
         }
         if (args.length != 2) {
-            sender.sendMessage(Component.text("Usage: /easyguard code <player>", NamedTextColor.GRAY));
+            sender.sendMessage(Component.text("Usage: /discordeasylogin code <player>", NamedTextColor.GRAY));
             return;
         }
         Player target = Bukkit.getPlayerExact(args[1]);
@@ -105,7 +105,7 @@ public final class EasyGuardCommand implements BasicCommand {
 
     private void trust(CommandSender sender, String[] args) {
         if (args.length != 3 || !args[1].equalsIgnoreCase("clear")) {
-            sender.sendMessage(Component.text("Usage: /easyguard trust clear <player|all>", NamedTextColor.GRAY));
+            sender.sendMessage(Component.text("Usage: /discordeasylogin trust clear <player|all>", NamedTextColor.GRAY));
             return;
         }
         if (args[2].equalsIgnoreCase("all")) {
@@ -127,13 +127,13 @@ public final class EasyGuardCommand implements BasicCommand {
 
     private void lockdown(CommandSender sender, String[] args) {
         if (args.length != 2) {
-            sender.sendMessage(Component.text("Usage: /easyguard lockdown <on|off>", NamedTextColor.GRAY));
+            sender.sendMessage(Component.text("Usage: /discordeasylogin lockdown <on|off>", NamedTextColor.GRAY));
             return;
         }
         String state = args[1].toLowerCase(Locale.ROOT);
         if (!state.equals("on") && !state.equals("off")) {
             // Anything but an exact "off" used to switch the lockdown off; a typo must not open the server.
-            sender.sendMessage(Component.text("Usage: /easyguard lockdown <on|off>", NamedTextColor.GRAY));
+            sender.sendMessage(Component.text("Usage: /discordeasylogin lockdown <on|off>", NamedTextColor.GRAY));
             return;
         }
         boolean on = state.equals("on");
@@ -142,7 +142,7 @@ public final class EasyGuardCommand implements BasicCommand {
             sender.sendMessage(Component.text("Lockdown enabled - all logins are denied.", NamedTextColor.RED));
         } else if (plugin.isConfigFailed()) {
             sender.sendMessage(Component.text("Manual lockdown cleared, but logins stay blocked: the config "
-                    + "failed to load. Fix config.yml and run /easyguard reload.", NamedTextColor.RED));
+                    + "failed to load. Fix config.yml and run /discordeasylogin reload.", NamedTextColor.RED));
         } else {
             sender.sendMessage(Component.text("Lockdown disabled.", NamedTextColor.GREEN));
         }

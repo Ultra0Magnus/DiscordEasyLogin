@@ -9,10 +9,14 @@
 // and sidesteps the per-player code cooldown. The trusted-rejoin scenario reuses a name on
 // purpose — that is the behaviour under test.
 
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+
 const { join, attemptJoin, waitFor, delay } = require('./lib/client');
 
 const PROMPT = 'A single-use code was sent to Discord';
-const CODE_IN_CONSOLE = /\[EasyGuard\] Verification code for (\S+) is: ([A-Z0-9]+) \(valid (\d+) minute\(s\)\)/;
+const CODE_IN_CONSOLE = /\[DiscordEasyLogin\] Verification code for (\S+) is: ([A-Z0-9]+) \(valid (\d+) minute\(s\)\)/;
 
 /**
  * Attaches the player's context to a failure so it can be diagnosed without a re-run. The
@@ -189,7 +193,7 @@ async function reloadKeepsPendingCode({ server, webhook, connect }) {
     const code = await awaitCode(webhook, 'EGReload');
     await player.awaitChat(PROMPT);
 
-    await server.console('easyguard reload', /EasyGuard reloaded\./);
+    await server.console('discordeasylogin reload', /DiscordEasyLogin reloaded\./);
 
     player.say(code);
     await player.awaitChat('Verified. Welcome,');
@@ -203,9 +207,9 @@ async function reloadKeepsPendingCode({ server, webhook, connect }) {
  * lifted by any successful reload. It must also say why, rather than blaming a broken config.
  */
 async function manualLockdownSurvivesReload({ server, connect }) {
-  await server.console('easyguard lockdown on', /Lockdown enabled/);
+  await server.console('discordeasylogin lockdown on', /Lockdown enabled/);
   try {
-    await server.console('easyguard reload', /EasyGuard reloaded\./);
+    await server.console('discordeasylogin reload', /DiscordEasyLogin reloaded\./);
 
     const denied = await attemptJoin('EGPaused', connect);
     expect(!denied.spawned, 'a reload lifted a manual lockdown', { player: denied, server });
@@ -216,14 +220,14 @@ async function manualLockdownSurvivesReload({ server, connect }) {
     );
 
     // Anything but on/off used to switch the lockdown off.
-    await server.console('easyguard lockdown of', /Usage: \/easyguard lockdown/);
+    await server.console('discordeasylogin lockdown of', /Usage: \/discordeasylogin lockdown/);
     const stillDenied = await attemptJoin('EGPaused2', connect);
     expect(!stillDenied.spawned, 'a mistyped "lockdown of" turned the lockdown off', {
       player: stillDenied,
       server,
     });
   } finally {
-    await server.console('easyguard lockdown off', /Lockdown disabled\./);
+    await server.console('discordeasylogin lockdown off', /Lockdown disabled\./);
   }
 
   const player = await join('EGUnpaused', connect);
@@ -234,7 +238,7 @@ async function manualLockdownSurvivesReload({ server, connect }) {
 async function reloadLockdown({ server, connect, config }) {
   server.writePluginConfig(config.broken);
   try {
-    await server.console('easyguard reload', /Reload failed, server is now locked down/);
+    await server.console('discordeasylogin reload', /Reload failed, server is now locked down/);
 
     const denied = await attemptJoin('EGLockReload', connect);
     expect(!denied.spawned, 'a player joined a locked-down server', { player: denied, server });
@@ -245,7 +249,7 @@ async function reloadLockdown({ server, connect, config }) {
     );
   } finally {
     server.writePluginConfig(config.good);
-    await server.console('easyguard reload', /EasyGuard reloaded\./);
+    await server.console('discordeasylogin reload', /DiscordEasyLogin reloaded\./);
   }
 
   const player = await join('EGUnlocked', connect);
@@ -261,7 +265,7 @@ async function startupLockdown({ server, connect, config }) {
   await server.restartWith(config.broken, { expectLockdown: true });
 
   expect(
-    server.matchLog(/EasyGuard could not start: /) !== null,
+    server.matchLog(/DiscordEasyLogin could not start: /) !== null,
     'the startup failure was not logged',
     { server },
   );
@@ -277,7 +281,7 @@ async function startupLockdown({ server, connect, config }) {
     server,
   });
   expect(
-    (denied.disconnect || '').includes('This server is locked down: EasyGuard could not start.'),
+    (denied.disconnect || '').includes('This server is locked down: DiscordEasyLogin could not start.'),
     `unexpected startup lockdown reason: ${(denied.disconnect || '(none)').replace(/\n/g, ' / ')}`,
     { player: denied, server },
   );
@@ -285,7 +289,7 @@ async function startupLockdown({ server, connect, config }) {
   // The tempting fix for a locked server is "lockdown off". With no config loaded, that used to
   // lift the lockdown and let the next player in with no code at all. It must change nothing.
   const from = server.mark();
-  await server.console('easyguard lockdown off', /Lockdown disabled\.|Manual lockdown cleared/);
+  await server.console('discordeasylogin lockdown off', /Lockdown disabled\.|Manual lockdown cleared/);
   const stillDenied = await attemptJoin('EGLockOff', connect);
   expect(!stillDenied.spawned, '"lockdown off" opened a server whose config never loaded', {
     player: stillDenied,
@@ -312,6 +316,57 @@ async function recovery({ server, webhook, connect, config }) {
   }
 }
 
+/** The UUID an offline-mode server gives a name: Java's UUID.nameUUIDFromBytes("OfflinePlayer:" + name). */
+function offlineUuid(name) {
+  const bytes = crypto.createHash('md5').update(`OfflinePlayer:${name}`, 'utf8').digest();
+  bytes[6] = (bytes[6] & 0x0f) | 0x30; // version 3
+  bytes[8] = (bytes[8] & 0x3f) | 0x80; // IETF variant
+  const hex = bytes.toString('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+/**
+ * Upgrading from 0.0.x, when this plugin was called EasyGuard: its settings and trusted sessions
+ * live in plugins/EasyGuard/. The first start under the new name must carry both over, or an
+ * upgrade would silently reset the config to defaults (a lockdown, with no webhook set) and make
+ * every trusted player verify again.
+ */
+async function upgradeFromEasyGuard({ server, webhook, connect, config }) {
+  await server.stop();
+  const plugins = path.join(server.dir, 'plugins');
+  fs.rmSync(path.join(plugins, 'DiscordEasyLogin'), { recursive: true, force: true });
+  const former = path.join(plugins, 'EasyGuard');
+  fs.mkdirSync(former, { recursive: true });
+  fs.writeFileSync(path.join(former, 'config.yml'), config.good);
+  const trusted = 'EGUpgraded';
+  fs.writeFileSync(path.join(former, 'sessions.properties'),
+    `${offlineUuid(trusted)}=${Date.now() + 60 * 60 * 1000}\n`);
+
+  await server.start();
+  expect(
+    server.matchLog(/Copied your settings and trusted sessions from plugins\/EasyGuard\//) !== null,
+    'the first start under the new name did not copy plugins/EasyGuard/',
+    { server },
+  );
+
+  const before = webhook.countFor(trusted);
+  const player = await join(trusted, connect);
+  try {
+    // Nothing to await: this proves the absence of a code and of a prompt.
+    await delay(3000);
+    expect(
+      webhook.countFor(trusted) === before && !player.saw(PROMPT),
+      'a player trusted under EasyGuard was asked to verify again after the upgrade',
+      { player, server },
+    );
+  } finally {
+    await player.quit();
+  }
+
+  expect(fs.existsSync(path.join(former, 'config.yml')),
+    'the old plugins/EasyGuard/ was removed; it must be left in place for a rollback', { server });
+}
+
 // Order matters: the restart-based scenarios come last, and trustedRejoin depends on
 // happyPath having verified the same username.
 module.exports = [
@@ -326,4 +381,5 @@ module.exports = [
   { name: 'broken config on reload locks the door, a fix reopens it', run: reloadLockdown },
   { name: 'broken config at startup denies every login, even after "lockdown off"', run: startupLockdown },
   { name: 'recovery: fixed config restores normal joins', run: recovery },
+  { name: 'upgrading from EasyGuard keeps the config and trusted players', run: upgradeFromEasyGuard },
 ];

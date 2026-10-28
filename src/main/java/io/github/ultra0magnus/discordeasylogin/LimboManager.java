@@ -1,4 +1,4 @@
-package io.github.ultra0magnus.easyguard;
+package io.github.ultra0magnus.discordeasylogin;
 
 import java.time.Duration;
 import java.util.Map;
@@ -25,10 +25,10 @@ public final class LimboManager {
     }
 
     private final Plugin plugin;
-    private final Supplier<EasyGuardConfig> config;
+    private final Supplier<DiscordEasyLoginConfig> config;
     private final Map<UUID, Held> held = new ConcurrentHashMap<>();
 
-    public LimboManager(Plugin plugin, Supplier<EasyGuardConfig> config) {
+    public LimboManager(Plugin plugin, Supplier<DiscordEasyLoginConfig> config) {
         this.plugin = plugin;
         this.config = config;
     }
@@ -39,7 +39,7 @@ public final class LimboManager {
      * same account may have quit and rejoined, and acting on the new session would free it.
      */
     public Object hold(Player player, Duration timeout, Consumer<Player> onTimeout) {
-        EasyGuardConfig cfg = config.get();
+        DiscordEasyLoginConfig cfg = config.get();
         // Vanilla remounts a player who logged out riding something, and riding is not walking:
         // PlayerMoveEvent never fires for it. Put them on their feet first.
         if (player.isInsideVehicle()) {

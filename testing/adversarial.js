@@ -8,7 +8,7 @@
 // because the plugin was wrong (teleports, item use, chat leaks, the reconnect cooldown, a late
 // Discord failure freeing the next session); they now assert the fixed behaviour.
 //
-// Set EASYGUARD_EXTRA_PLUGINS=/path/to/jars to run this beside your real plugin set — that is
+// Set DISCORDEASYLOGIN_EXTRA_PLUGINS=/path/to/jars to run this beside your real plugin set — that is
 // the gap no clean-server suite can close.
 
 const fs = require('fs');
@@ -22,20 +22,21 @@ const {
   findPluginJar,
   requireDependencies,
   pluginConfig,
+  installProtocolBridgeIfNeeded,
   registerEmergencyStop,
   runScenarios,
   report,
 } = require('./lib/harness');
-const { join, attemptJoin, waitFor, delay } = require('./lib/client');
+const { join, attemptJoin, waitFor, delay, CLIENT_VERSION } = require('./lib/client');
 
 const SERVER_DIR = path.join(TESTING, '.server-adversarial');
 const CACHE_DIR = path.join(TESTING, '.cache');
 const PROBE_DIR = path.join(TESTING, 'leak-probe');
 
-const MC_PORT = Number(process.env.EASYGUARD_TEST_PORT || 25599);
-const WEBHOOK_PORT = Number(process.env.EASYGUARD_WEBHOOK_PORT || 8099);
+const MC_PORT = Number(process.env.DISCORDEASYLOGIN_TEST_PORT || 25599);
+const WEBHOOK_PORT = Number(process.env.DISCORDEASYLOGIN_WEBHOOK_PORT || 8099);
 const KEEP = process.argv.includes('--keep');
-const ONLY = process.env.EASYGUARD_ONLY || '';
+const ONLY = process.env.DISCORDEASYLOGIN_ONLY || '';
 
 const PROMPT = 'A single-use code was sent to Discord';
 const BLOCKED = 'Verify first: paste the code from Discord in chat.';
@@ -68,7 +69,7 @@ async function awaitNewCode(webhook, username, previousCount, timeout = 15000) {
 }
 
 function trustedSessionCount(server) {
-  const file = path.join(server.dir, 'plugins', 'EasyGuard', 'sessions.properties');
+  const file = path.join(server.dir, 'plugins', 'DiscordEasyLogin', 'sessions.properties');
   if (!fs.existsSync(file)) return 0;
   return fs.readFileSync(file, 'utf8').split('\n').filter((line) => SESSION_LINE.test(line)).length;
 }
@@ -85,8 +86,8 @@ async function commandBypass({ server, webhook, connect }) {
     '/list',
     '/msg EGCmd hello',
     '/say hello',
-    '/easyguard status',
-    '/easyguard:easyguard status',
+    '/discordeasylogin status',
+    '/discordeasylogin:discordeasylogin status',
   ];
 
   const player = await join('EGCmd', connect);
@@ -320,7 +321,7 @@ async function reconnectCooldown({ server, webhook, connect, applyConfig }) {
 
 /**
  * The property that keeps strangers scanning your tunnel from making your Discord channel
- * ring: the vanilla whitelist is checked before EasyGuard ever issues a code.
+ * ring: the vanilla whitelist is checked before DiscordEasyLogin ever issues a code.
  */
 async function whitelistRunsFirst({ server, webhook, connect }) {
   const before = webhook.payloads.length;
@@ -571,7 +572,7 @@ const SCENARIOS = [
   { name: "other plugins cannot read a held player's chat", run: chatLeakToOtherPlugins },
 ];
 
-/** The leak scenario needs a second plugin; build it with the Maven that built EasyGuard. */
+/** The leak scenario needs a second plugin; build it with the Maven that built DiscordEasyLogin. */
 function buildLeakProbe(javaBin) {
   const { spawnSync } = require('child_process');
   const jar = path.join(PROBE_DIR, 'target', 'LeakProbe.jar');
@@ -597,8 +598,8 @@ async function main() {
   requireDependencies();
   const pluginJar = findPluginJar();
   const javaBin = resolveJava();
-  await requireFreePort(MC_PORT, 'Minecraft', 'EASYGUARD_TEST_PORT');
-  await requireFreePort(WEBHOOK_PORT, 'Mock webhook', 'EASYGUARD_WEBHOOK_PORT');
+  await requireFreePort(MC_PORT, 'Minecraft', 'DISCORDEASYLOGIN_TEST_PORT');
+  await requireFreePort(WEBHOOK_PORT, 'Mock webhook', 'DISCORDEASYLOGIN_WEBHOOK_PORT');
 
   console.log(`plugin   ${path.relative(ROOT, pluginJar)}`);
   console.log(`java     ${javaBin}`);
@@ -620,7 +621,9 @@ async function main() {
     console.log('probe    could not be built — the chat-leak scenario will be skipped');
   }
 
-  const extra = server.installExtraPlugins(process.env.EASYGUARD_EXTRA_PLUGINS);
+  const bridge = await installProtocolBridgeIfNeeded(server, CACHE_DIR);
+  if (bridge.length) console.log(`bridge   ${bridge.join(', ')} (client speaks ${CLIENT_VERSION})`);
+  const extra = server.installExtraPlugins(process.env.DISCORDEASYLOGIN_EXTRA_PLUGINS);
   if (extra.length) console.log(`extra    ${extra.join(', ')}`);
 
   const base = { webhookPort: WEBHOOK_PORT };
@@ -640,7 +643,7 @@ async function main() {
 
     const applyConfig = async (overrides = {}) => {
       server.writePluginConfig(pluginConfig({ ...base, ...overrides }));
-      await server.console('easyguard reload', /EasyGuard reloaded\./);
+      await server.console('discordeasylogin reload', /DiscordEasyLogin reloaded\./);
     };
 
     results = await runScenarios(scenarios, {

@@ -1,8 +1,8 @@
 {
-  "name": "easyguard-testing",
+  "name": "discordeasylogin-testing",
   "version": "0.0.1",
   "private": true,
-  "description": "End-to-end tests for EasyGuard against a throwaway Paper server",
+  "description": "End-to-end tests for DiscordEasyLogin against a throwaway Paper server",
   "main": "e2e.js",
   "scripts": {
     "e2e": "node e2e.js",

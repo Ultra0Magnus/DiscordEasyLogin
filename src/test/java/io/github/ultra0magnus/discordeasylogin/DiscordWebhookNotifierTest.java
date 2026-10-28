@@ -1,4 +1,4 @@
-package io.github.ultra0magnus.easyguard;
+package io.github.ultra0magnus.discordeasylogin;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -7,7 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
-import io.github.ultra0magnus.easyguard.DiscordWebhookNotifier.Delivery;
+import io.github.ultra0magnus.discordeasylogin.DiscordWebhookNotifier.Delivery;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.URI;
@@ -62,7 +62,7 @@ class DiscordWebhookNotifierTest {
     }
 
     private DiscordWebhookNotifier notifier(URI endpoint, List<String> pingUserIds) {
-        return new DiscordWebhookNotifier(endpoint, Duration.ofSeconds(3), "EasyGuard", pingUserIds);
+        return new DiscordWebhookNotifier(endpoint, Duration.ofSeconds(3), "DiscordEasyLogin", pingUserIds);
     }
 
     @Test
@@ -73,7 +73,7 @@ class DiscordWebhookNotifierTest {
         assertEquals(1, bodies.size());
         String body = bodies.getFirst();
         assertTrue(body.contains("ABCD1234"), body);
-        assertTrue(body.contains("\"username\":\"EasyGuard\""), body);
+        assertTrue(body.contains("\"username\":\"DiscordEasyLogin\""), body);
         assertTrue(body.contains("\"allowed_mentions\":{\"parse\":[],\"users\":[]}"), body);
     }
 
@@ -113,7 +113,7 @@ class DiscordWebhookNotifierTest {
     void reportsFailureWhenNothingIsListening() {
         // Fail-closed depends on this reporting failure rather than throwing.
         DiscordWebhookNotifier notifier = new DiscordWebhookNotifier(
-                URI.create("http://127.0.0.1:1/hook"), Duration.ofMillis(500), "EasyGuard", List.of());
+                URI.create("http://127.0.0.1:1/hook"), Duration.ofMillis(500), "DiscordEasyLogin", List.of());
         Delivery delivery = notifier.send("Code: **ABCD1234**");
         assertFalse(delivery.delivered());
         assertFalse(delivery.detail().contains("127.0.0.1:1/hook"), delivery.detail());
@@ -135,7 +135,7 @@ class DiscordWebhookNotifierTest {
     void neverPingsEveryoneWhateverTheTextSays() {
         // parse:[] is what makes "@everyone" in a template or prefix inert; only listed users ping.
         String payload = new DiscordWebhookNotifier(URI.create("http://127.0.0.1/hook"), Duration.ofSeconds(1),
-                "EasyGuard", List.of("123456789012345678")).buildPayload("@everyone @here <@&999> join request");
+                "DiscordEasyLogin", List.of("123456789012345678")).buildPayload("@everyone @here <@&999> join request");
         assertTrue(payload.contains("\"parse\":[]"), payload);
         assertFalse(payload.contains("\"everyone\""), payload);
         assertFalse(payload.contains("\"roles\""), payload);
@@ -162,7 +162,7 @@ class DiscordWebhookNotifierTest {
     @Test
     void neverEchoesTheWebhookSecretInErrors() {
         // Regression: URISyntaxException's message repeats its whole input, token included, and
-        // that message went to the log and to whoever ran /easyguard reload.
+        // that message went to the log and to whoever ran /discordeasylogin reload.
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> DiscordWebhookNotifier.validateEndpoint(
                         "https://discord.com/api/webhooks/123456/" + SECRET + "|typo", false));

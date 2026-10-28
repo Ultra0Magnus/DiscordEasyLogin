@@ -4,14 +4,14 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
-  <groupId>io.github.ultra0magnus.easyguard.test</groupId>
+  <groupId>io.github.ultra0magnus.discordeasylogin.test</groupId>
   <artifactId>leak-probe</artifactId>
   <version>0.0.1</version>
   <packaging>jar</packaging>
 
   <name>LeakProbe</name>
   <description>Test-only plugin: watches chat the way a Discord bridge would, to see whether an
-    unverified player's message escapes EasyGuard. Never install this on a real server.</description>
+    unverified player's message escapes DiscordEasyLogin. Never install this on a real server.</description>
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
