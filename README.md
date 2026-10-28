@@ -48,7 +48,7 @@ channel can read every code — see [Limits](#limits).
 
 ### 2. Install
 
-Drop `EasyGuard-0.0.1.jar` into `plugins/` and start the server once. It will refuse to run until a
+Drop `EasyGuard-0.0.2.jar` into `plugins/` and start the server once. It will refuse to run until a
 webhook URL is set (that is deliberate — see [Fail-closed](#fail-closed)).
 
 ### 3. Point it at your webhook
@@ -76,9 +76,12 @@ Then `/easyguard reload` (or restart). `/easyguard status` shows what it is doin
 | Situation | Behaviour |
 |---|---|
 | Discord unreachable | Player stays frozen. The code is written to the **server console**, so you can still get yourself in during an outage. Set `fallback.log_code_to_console_on_failure: false` to kick instead. |
-| Bad config / plugin fails to start | The server enters **lockdown**: every login is denied with an explanatory kick screen. A broken EasyGuard blocks the door rather than vanishing and leaving the server open. |
+| Bad config / plugin fails to start | The server enters **lockdown**: every login is denied with an explanatory kick screen. A broken EasyGuard blocks the door rather than vanishing and leaving the server open. `/easyguard lockdown off` cannot lift it — only a config that loads can. |
+| Unexpected error while checking a joining player | The player is kicked with "verification unavailable" and the error is logged. An exception never lets someone in unverified. |
+| Discord answers slowly, then fails | Only the session that asked is affected. A late failure can never act on a newer login by the same account. |
 | Webhook URL typo pointing elsewhere | Rejected at load. Only `https://discord.com/api/webhooks/…` is accepted unless you explicitly set `discord.allow_non_discord_host: true`. |
-| Join flood | Per-player cooldown (10s) plus a server-wide ceiling (20 codes/minute) protect your channel. Codes are only issued *after* the vanilla whitelist and ban checks, so strangers never reach Discord. |
+| Join flood | Per-player cooldown (10s, kept across reconnects) plus a server-wide ceiling (20 codes/minute) protect your channel. Codes are only issued *after* the vanilla whitelist and ban checks, so strangers never reach Discord. |
+| Webhook URL malformed | The error says what is wrong and where, but never repeats the URL: it contains the webhook's secret token, and logs get shared. |
 | Plugin disabled while someone is unverified | Unverified players are kicked rather than silently released. |
 | `enabled: false` | The gate is off and anyone whitelisted can join with no code. Logged loudly as a warning at every startup. |
 
@@ -91,12 +94,12 @@ The values worth knowing:
 |---|---|---|
 | `enabled` | `true` | Master switch for the gate. |
 | `discord.webhook_url` | *empty* | Overridden by `$EASYGUARD_DISCORD_WEBHOOK`. |
-| `discord.mention_prefix` | *empty* | e.g. `<@your-user-id>` to tag yourself. Pings are suppressed by default. |
-| `code.length` | `8` | Drawn from `ABCDEFGHJKMNPQRSTUVWXYZ23456789` (no `O/0/I/1/L` lookalikes). |
+| `discord.ping_user_ids` | *empty* | Discord user IDs to ping on every join request, so a login attempt on a compromised account reaches your phone. The only mentions that can ever ping — `@everyone`, `@here` and roles never do. |
+| `code.length` | `8` | Drawn from `ABCDEFGHJKMNPQRSTUVWXYZ23456789` (no `O/0/I/1/L` lookalikes). Minimum 6. |
 | `code.ttl_seconds` | `300` | How long a code stays valid. |
 | `code.max_attempts` | `3` | Wrong guesses before a kick. |
 | `verification.timeout_seconds` | `120` | How long a player may sit unverified. |
-| `verification.apply_blindness` | `true` | Stops an unverified client from scouting your base. |
+| `verification.apply_blindness` | `true` | Makes it harder for an unverified player to look around. Not a guarantee — see [Limits](#limits). |
 | `verification.hide_from_others` | `true` | Unverified players are invisible and absent from the tab list. |
 | `trust.duration_hours` | `24` | `0` requires a code on every single join. |
 
@@ -108,11 +111,11 @@ editable under `messages:`.
 | Command | Who | Purpose |
 |---|---|---|
 | `/verify <code>` | any player | Submit a code. Pasting the code into chat works too. |
-| `/easyguard status` | `easyguard.admin` | Current state: lockdown, pending codes, trusted sessions. |
-| `/easyguard reload` | `easyguard.admin` | Re-read config. A rejected config locks the server down. |
+| `/easyguard status` | `easyguard.admin` | Current state: lockdown (and why), pending codes, trusted sessions. |
+| `/easyguard reload` | `easyguard.admin` | Re-read config. A rejected config locks the server down. Codes already sent and a manual lockdown both survive it. |
 | `/easyguard code <player>` | **console only** | Print a waiting player's live code. The documented escape hatch for a Discord outage. |
 | `/easyguard trust clear <player\|all>` | `easyguard.admin` | Force re-verification. |
-| `/easyguard lockdown <on\|off>` | `easyguard.admin` | Deny all logins / resume. |
+| `/easyguard lockdown <on\|off>` | `easyguard.admin` | Deny all logins / resume. Survives `reload`; does not survive a restart. Anything but exactly `on` or `off` is refused. |
 
 | Permission | Default | Notes |
 |---|---|---|
@@ -130,6 +133,17 @@ Worth being clear about what this does and does not buy you:
   front door, not the server box.
 - **Unverified players are technically online.** They occupy a player slot while frozen, blinded and
   hidden. The verification timeout bounds how long.
+- **Being in the world leaks some information.** A held player cannot act, chat, read chat, use
+  items, move or be seen — but the server still sends them the chunks around where they logged
+  out. Blindness hides that from a normal client, not from a modified one. Fully closing this
+  needs players to verify before they enter the world at all, which is a larger redesign.
+- **Voice chat is not covered.** Simple Voice Chat and similar plugins carry voice on their own
+  channel. Whether a held player can talk or listen depends on that plugin; test it with a second
+  account before relying on it.
+- **Other plugins can still see chat at `LOWEST` on the legacy chat event.** EasyGuard blanks an
+  unverified player's message before every chat priority a bridge realistically uses, on both the
+  modern and the legacy chat event. A plugin listening to the deprecated event at `LOWEST` itself
+  and registered before EasyGuard would still run first.
 - **Trusted sessions are keyed by UUID, not IP.** Behind a tunnel like playit.gg the server usually
   sees the tunnel's address rather than the player's, so IP binding would be meaningless or would
   lock everyone out.
@@ -138,22 +152,63 @@ Worth being clear about what this does and does not buy you:
 ## Building
 
 ```sh
-JAVA_HOME=/path/to/jdk-25 mvn package   # -> target/EasyGuard-0.0.1.jar
+JAVA_HOME=/path/to/jdk-25 mvn package   # -> target/EasyGuard-0.0.2.jar
 ```
 
-`mvn test` runs the unit tests (codes, attempt/expiry handling, session persistence, webhook
-delivery against a local mock HTTP server).
+## Testing
 
-## Verified against a live server
+Because this plugin fails *closed*, the failure that matters is "nobody can log in" — so test
+it against a server you do not care about before you point it at one you do.
 
-This build was exercised end-to-end on Paper 26.1.2 (build 74) with a scripted client:
+```sh
+cd testing && npm install && npm run e2e
+```
 
-- code delivered to the webhook on join, prompt shown to the player
-- movement blocked while unverified, restored after verification
-- chat from an unverified player never broadcast; a wrong code rejected with attempts counted down
-- commands other than `/verify` blocked while unverified
-- correct code accepted, join message posted afterwards
-- reconnect inside the trust window issues no second code
-- Discord unreachable → player stays held, code written to console
-- invalid config → lockdown, login denied at pre-login
-- verification timeout → kick
+That boots a throwaway Paper 26.1.2 server, installs the jar you just built, points it at a
+local mock webhook (never the real Discord), and drives real Minecraft clients through eleven
+scenarios — including the ones that lock the server down — then cleans up. About four minutes.
+
+It verifies, against a live server rather than by assertion:
+
+- a code reaches the webhook on join, and the player is frozen until they answer it
+- a lower-case paste of the code works
+- wrong codes count down, are never broadcast to public chat, and kick on the third
+- other commands are refused while unverified
+- a verified player reconnecting inside the trust window gets no second code
+- an unanswered join is kicked on timeout
+- **Discord unreachable → the player is held, the code goes to the server console, and that
+  console code still verifies** — the escape hatch you would use during an outage
+- **a broken config denies every login** rather than leaving the server unprotected, whether it
+  breaks on reload or at startup — and `/easyguard lockdown off` cannot lift it
+- a reload mid-verification keeps the code that is already in Discord valid
+- a manual lockdown survives a reload, and a typo cannot switch it off
+- **a fixed config lets you back in** — by reload, without a restart, or by restart
+
+A second suite, `npm run adversarial`, tries to *defeat* the gate rather than exercise it, with
+fifteen attacks: namespaced command bypasses, using another player's code, reusing a dead one,
+rejoining after a kick, double-pastes, expired codes, webhook floods, reconnect loops, strangers
+off the whitelist, teleporting a held player, using items while held (bows, potions, pearls,
+milk), reading chat while held, seeing a held player after joining later, a slow Discord failure
+freeing the next login, and other plugins reading what a held player types.
+
+Several of those started as findings in a security review and failed against the code of the
+time; each now guards its fix. See [`testing/README.md`](testing/README.md) for the list, for
+`EASYGUARD_EXTRA_PLUGINS` (running the suites beside your own plugin set), and for what
+deliberately is not covered — notably voice chat, which no scripted client can test.
+
+`mvn test` runs the unit tests underneath both suites (codes, attempt/expiry handling, cooldowns,
+config validation, session persistence, webhook delivery and redaction against a local mock HTTP
+server).
+
+Every push runs all three in CI (`.github/workflows/ci.yml`).
+
+## Releasing
+
+Set the version in `pom.xml`, commit, then push a matching tag:
+
+```sh
+git tag v0.0.2 && git push origin v0.0.2
+```
+
+`.github/workflows/release.yml` checks the tag matches `pom.xml`, runs the tests, and publishes a
+GitHub Release with the jar and its SHA-256 attached.

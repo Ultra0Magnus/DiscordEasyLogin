@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    name: Build and unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      - run: mvn -B verify
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: EasyGuard-jar
+          path: target/EasyGuard-*.jar
+          if-no-files-found: error
+
+  server:
+    # Both suites boot a real Paper server and drive scripted players through it, including the
+    # paths that lock the server down. Nothing touches Discord: the webhook is a local mock.
+    name: End-to-end and adversarial suites
+    needs: unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: testing/package-lock.json
+
+      - name: Cache the Paper server jar
+        uses: actions/cache@v4
+        with:
+          path: testing/.cache
+          key: paper-${{ hashFiles('testing/lib/server.js') }}
+
+      - run: mvn -B -q package -DskipTests
+
+      - name: Install test dependencies
+        working-directory: testing
+        run: npm ci
+
+      - name: End-to-end suite
+        working-directory: testing
+        run: npm run e2e
+
+      - name: Adversarial suite
+        working-directory: testing
+        run: npm run adversarial
+
+      - name: Keep the server logs of a failed run
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-server-logs
+          path: testing/.server*/logs/
+          if-no-files-found: ignore

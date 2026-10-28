@@ -6,8 +6,10 @@ import java.net.URISyntaxException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.List;
 import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -21,22 +23,40 @@ public final class DiscordWebhookNotifier {
     private static final Pattern RETRY_AFTER = Pattern.compile("\"retry_after\"\\s*:\\s*([0-9.]+)");
     private static final Duration MAX_RETRY_WAIT = Duration.ofSeconds(5);
 
+    /**
+     * What happened to one message. {@code detail} explains a failure well enough to act on
+     * ("HTTP 404" means the webhook was deleted) and never contains the webhook URL.
+     */
+    public record Delivery(boolean delivered, String detail) {
+
+        static Delivery ok() {
+            return new Delivery(true, "delivered");
+        }
+
+        static Delivery failed(String detail) {
+            return new Delivery(false, detail);
+        }
+    }
+
     private final URI endpoint;
     private final Duration timeout;
     private final String username;
+    private final List<String> pingUserIds;
     private final HttpClient client;
 
-    public DiscordWebhookNotifier(URI endpoint, Duration timeout, String username) {
-        this(endpoint, timeout, username, HttpClient.newBuilder()
+    public DiscordWebhookNotifier(URI endpoint, Duration timeout, String username, List<String> pingUserIds) {
+        this(endpoint, timeout, username, pingUserIds, HttpClient.newBuilder()
                 .connectTimeout(timeout)
                 .followRedirects(HttpClient.Redirect.NEVER)
                 .build());
     }
 
-    DiscordWebhookNotifier(URI endpoint, Duration timeout, String username, HttpClient client) {
+    DiscordWebhookNotifier(URI endpoint, Duration timeout, String username, List<String> pingUserIds,
+                           HttpClient client) {
         this.endpoint = endpoint;
         this.timeout = timeout;
         this.username = username;
+        this.pingUserIds = List.copyOf(pingUserIds);
         this.client = client;
     }
 
@@ -52,7 +72,11 @@ public final class DiscordWebhookNotifier {
         try {
             uri = new URI(raw.trim());
         } catch (URISyntaxException e) {
-            throw new IllegalArgumentException("discord.webhook_url is not a valid URL: " + e.getMessage());
+            // Never e.getMessage(): it echoes the whole input, and the input contains the webhook's
+            // secret token. This message goes to the log and to whoever ran /easyguard reload.
+            throw new IllegalArgumentException("discord.webhook_url is not a valid URL ("
+                    + e.getReason() + (e.getIndex() >= 0 ? " at character " + (e.getIndex() + 1) : "")
+                    + "); the URL itself is not shown because it contains a secret");
         }
         String host = uri.getHost();
         if (host == null) {
@@ -75,10 +99,10 @@ public final class DiscordWebhookNotifier {
     }
 
     /**
-     * @return true only if Discord accepted the message. A false result is what drives the
+     * @return delivered only if Discord accepted the message. A failure is what drives the
      *         fail-closed path, so it must never be optimistic.
      */
-    public boolean send(String content) {
+    public Delivery send(String content) {
         String payload = buildPayload(content);
         try {
             HttpResponse<String> response = post(payload);
@@ -87,13 +111,34 @@ public final class DiscordWebhookNotifier {
                 Thread.sleep(wait.toMillis());
                 response = post(payload);
             }
-            return response.statusCode() >= 200 && response.statusCode() < 300;
+            int status = response.statusCode();
+            if (status >= 200 && status < 300) {
+                return Delivery.ok();
+            }
+            return Delivery.failed(describeStatus(status));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return false;
+            return Delivery.failed("interrupted");
+        } catch (HttpTimeoutException e) {
+            return Delivery.failed("Discord did not answer within " + timeout.toSeconds() + "s");
         } catch (IOException e) {
-            return false;
+            // The class name says enough (ConnectException, UnknownHostException...) and, unlike
+            // some messages, cannot contain the URL.
+            return Delivery.failed("network error: " + e.getClass().getSimpleName());
+        } catch (RuntimeException e) {
+            // Anything else must still come back as a failure, so the caller's fail-closed path and
+            // console fallback run instead of the player silently waiting for the timeout.
+            return Delivery.failed("unexpected error: " + e.getClass().getSimpleName());
         }
+    }
+
+    private static String describeStatus(int status) {
+        return switch (status) {
+            case 401, 403 -> "Discord returned HTTP " + status + " - the webhook token is wrong";
+            case 404 -> "Discord returned HTTP 404 - the webhook was deleted; create a new one";
+            case 429 -> "Discord returned HTTP 429 - rate limited even after waiting";
+            default -> "Discord returned HTTP " + status;
+        };
     }
 
     private HttpResponse<String> post(String payload) throws IOException, InterruptedException {
@@ -106,10 +151,22 @@ public final class DiscordWebhookNotifier {
         return client.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
     }
 
-    private String buildPayload(String content) {
+    /**
+     * {@code parse: []} means nothing in the text pings by itself - not {@code @everyone}, not a
+     * role, not a user. Only the IDs listed in {@code users} do, and those come from validated
+     * config, never from anything a player controls.
+     */
+    String buildPayload(String content) {
+        StringBuilder text = new StringBuilder();
+        StringBuilder users = new StringBuilder();
+        for (String id : pingUserIds) {
+            text.append("<@").append(id).append("> ");
+            users.append(users.isEmpty() ? "" : ",").append('"').append(id).append('"');
+        }
+        text.append(content);
         return "{\"username\":\"" + escapeJson(username)
-                + "\",\"content\":\"" + escapeJson(content)
-                + "\",\"allowed_mentions\":{\"parse\":[]}}";
+                + "\",\"content\":\"" + escapeJson(text.toString())
+                + "\",\"allowed_mentions\":{\"parse\":[],\"users\":[" + users + "]}}";
     }
 
     private static Duration parseRetryAfter(String body) {

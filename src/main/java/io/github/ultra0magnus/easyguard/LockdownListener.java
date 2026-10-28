@@ -26,11 +26,28 @@ public final class LockdownListener implements Listener {
 
     @EventHandler(priority = EventPriority.LOWEST)
     public void onPreLogin(AsyncPlayerPreLoginEvent event) {
+        deny(event);
+    }
+
+    /** Again at HIGHEST, so another plugin calling {@code allow()} in between cannot reopen the door. */
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void onPreLoginFinal(AsyncPlayerPreLoginEvent event) {
+        deny(event);
+    }
+
+    private void deny(AsyncPlayerPreLoginEvent event) {
         if (!plugin.isLockedDown()) {
             return;
         }
         EasyGuardConfig cfg = plugin.configOrNull();
-        Component reason = cfg == null ? FALLBACK_REASON : Text.render(cfg.messages().kickLockdown());
+        Component reason;
+        if (cfg == null) {
+            reason = FALLBACK_REASON;
+        } else if (plugin.isConfigFailed()) {
+            reason = Text.render(cfg.messages().kickLockdown());
+        } else {
+            reason = Text.render(cfg.messages().kickManualLockdown());
+        }
         event.disallow(AsyncPlayerPreLoginEvent.Result.KICK_OTHER, reason);
     }
 }

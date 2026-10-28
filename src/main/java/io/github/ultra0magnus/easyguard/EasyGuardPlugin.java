@@ -17,7 +17,13 @@ import org.bukkit.plugin.java.JavaPlugin;
 public final class EasyGuardPlugin extends JavaPlugin {
 
     private volatile EasyGuardConfig config;
-    private volatile boolean lockedDown;
+
+    // Two separate reasons to deny every login. Only a successful load clears the first, and only
+    // an administrator clears the second: a reload must not lift a lockdown someone turned on on
+    // purpose, and "lockdown off" must not open a server whose config never loaded.
+    // Starts true: until a config has actually loaded, the safe answer to any login is no.
+    private volatile boolean configFailed = true;
+    private volatile boolean manualLockdown;
 
     private final CodeGenerator codeGenerator = new CodeGenerator();
     private volatile VerificationManager verification;
@@ -39,19 +45,13 @@ public final class EasyGuardPlugin extends JavaPlugin {
 
         String error = loadEverything();
         if (error != null) {
-            lockedDown = true;
+            configFailed = true;
             getLogger().severe("EasyGuard could not start: " + error);
             getLogger().severe("The server is now LOCKED DOWN - all logins are denied until this is fixed.");
             return;
         }
-
-        if (!config.enabled()) {
-            getLogger().warning("EasyGuard is installed but 'enabled: false' in config.yml - "
-                    + "players can join WITHOUT a Discord code.");
-        } else {
-            getLogger().info("EasyGuard active: codes go to " + config.webhookEndpoint().getHost()
-                    + ", trust window " + config.trustDuration().toHours() + "h.");
-        }
+        configFailed = false;
+        announceState();
 
         Bukkit.getScheduler().runTaskTimerAsynchronously(this, this::pruneSessions,
                 20L * 600L, 20L * 600L);
@@ -86,12 +86,30 @@ public final class EasyGuardPlugin extends JavaPlugin {
         reloadConfig();
         String error = loadEverything();
         if (error != null) {
-            lockedDown = true;
+            configFailed = true;
             getLogger().severe("EasyGuard reload failed: " + error + " - server LOCKED DOWN.");
             return error;
         }
-        lockedDown = false;
+        configFailed = false;
+        announceState();
+        if (manualLockdown) {
+            getLogger().warning("EasyGuard reloaded, but the manual lockdown is still on - "
+                    + "run '/easyguard lockdown off' to allow logins.");
+        }
         return null;
+    }
+
+    /** Said at startup and on every reload, so the gate can never be off without anyone noticing. */
+    private void announceState() {
+        if (!config.enabled()) {
+            getLogger().warning("EasyGuard is installed but 'enabled: false' in config.yml - "
+                    + "players can join WITHOUT a Discord code.");
+        } else {
+            getLogger().info("EasyGuard active: codes go to " + config.webhookEndpoint().getHost()
+                    + ", trust window " + config.trustDuration().toHours() + "h"
+                    + (config.pingUserIds().isEmpty() ? "" : ", pinging " + config.pingUserIds().size()
+                    + " user(s)") + ".");
+        }
     }
 
     private String loadEverything() {
@@ -99,20 +117,31 @@ public final class EasyGuardPlugin extends JavaPlugin {
             saveDefaultConfig();
             EasyGuardConfig loaded = EasyGuardConfig.load(getConfig());
 
-            TrustedSessionStore sessions = new TrustedSessionStore(
-                    getDataFolder().toPath().resolve("sessions.properties"), System::currentTimeMillis);
-            sessions.load();
+            // Loaded from disk once. A reload keeps the live store: re-reading the file would drop
+            // any trust granted since the last save finished.
+            TrustedSessionStore sessions = this.trustedSessions;
+            if (sessions == null) {
+                sessions = new TrustedSessionStore(
+                        getDataFolder().toPath().resolve("sessions.properties"), System::currentTimeMillis);
+                sessions.load();
+            }
 
             this.config = loaded;
             this.trustedSessions = sessions;
             this.notifier = new DiscordWebhookNotifier(
-                    loaded.webhookEndpoint(), loaded.webhookTimeout(), loaded.webhookUsername());
-            this.verification = new VerificationManager(
+                    loaded.webhookEndpoint(), loaded.webhookTimeout(), loaded.webhookUsername(),
+                    loaded.pingUserIds());
+            VerificationManager.Limits limits = new VerificationManager.Limits(
                     loaded.codeTtl().toMillis(),
                     loaded.maxAttempts(),
                     loaded.perPlayerCooldown().toMillis(),
-                    loaded.maxCodesPerMinute(),
-                    System::currentTimeMillis);
+                    loaded.maxCodesPerMinute());
+            if (this.verification == null) {
+                this.verification = new VerificationManager(limits, System::currentTimeMillis);
+            } else {
+                // Keep the existing manager: codes already in Discord and running cooldowns survive a reload.
+                this.verification.configure(limits);
+            }
             return null;
         } catch (IllegalArgumentException e) {
             return e.getMessage();
@@ -159,11 +188,21 @@ public final class EasyGuardPlugin extends JavaPlugin {
     }
 
     public boolean isLockedDown() {
-        return lockedDown;
+        return configFailed || manualLockdown;
     }
 
-    public void setLockedDown(boolean lockedDown) {
-        this.lockedDown = lockedDown;
+    /** True when the lockdown is because the config could not be loaded, as opposed to an admin's choice. */
+    public boolean isConfigFailed() {
+        return configFailed;
+    }
+
+    public boolean isManualLockdown() {
+        return manualLockdown;
+    }
+
+    /** Only touches the administrator's lockdown; a config failure can only be cleared by fixing the config. */
+    public void setManualLockdown(boolean on) {
+        this.manualLockdown = on;
     }
 
     public CodeGenerator codeGenerator() {

@@ -5,3 +5,8 @@ sessions.properties
 .idea/
 *.iml
 .vscode/
+
+# end-to-end test scratch: node deps, the downloaded Paper jar, the throwaway servers
+testing/node_modules/
+testing/.cache/
+testing/.server*/

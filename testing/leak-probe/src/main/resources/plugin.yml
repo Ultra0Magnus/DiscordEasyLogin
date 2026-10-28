@@ -1,0 +1,6 @@
+name: LeakProbe
+version: '0.0.1'
+main: io.github.ultra0magnus.easyguard.test.ChatProbe
+api-version: '26.1'
+description: Test-only chat observer used by the EasyGuard adversarial suite. Do not deploy.
+load: POSTWORLD

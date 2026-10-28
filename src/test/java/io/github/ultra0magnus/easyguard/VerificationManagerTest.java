@@ -15,7 +15,8 @@ class VerificationManagerTest {
     private final UUID player = UUID.randomUUID();
 
     private VerificationManager manager(long ttlMillis, int attempts, long cooldownMillis, int perMinute) {
-        return new VerificationManager(ttlMillis, attempts, cooldownMillis, perMinute, () -> now[0]);
+        return new VerificationManager(
+                new VerificationManager.Limits(ttlMillis, attempts, cooldownMillis, perMinute), () -> now[0]);
     }
 
     @Test
@@ -110,5 +111,43 @@ class VerificationManagerTest {
 
         assertEquals(Outcome.NO_PENDING, manager.verify(player, "ABCD1234"));
         assertEquals(0, manager.pendingCount());
+    }
+
+    @Test
+    void cooldownSurvivesCancelSoReconnectingCannotMintCodes() {
+        // Regression: cancel() on quit used to erase the cooldown, so one account could
+        // reconnect in a loop and post a fresh code to Discord every time.
+        VerificationManager manager = manager(60_000, 3, 10_000, 100);
+        manager.issue(player, "ABCD1234");
+        manager.cancel(player);
+
+        assertFalse(manager.canIssue(player));
+        now[0] += 10_001;
+        assertTrue(manager.canIssue(player));
+    }
+
+    @Test
+    void successClearsTheCooldown() {
+        VerificationManager manager = manager(60_000, 3, 10_000, 100);
+        manager.issue(player, "ABCD1234");
+        assertEquals(Outcome.SUCCESS, manager.verify(player, "ABCD1234"));
+
+        assertTrue(manager.canIssue(player));
+    }
+
+    @Test
+    void reconfigureKeepsPendingCodesAndCooldowns() {
+        VerificationManager manager = manager(60_000, 3, 10_000, 100);
+        manager.issue(player, "ABCD1234");
+
+        // A config reload swaps the limits; it must not strand a player whose code is already in Discord.
+        manager.configure(new VerificationManager.Limits(30_000, 5, 20_000, 100));
+
+        assertFalse(manager.canIssue(player));
+        assertEquals(Outcome.SUCCESS, manager.verify(player, "ABCD1234"));
+
+        UUID other = UUID.randomUUID();
+        manager.issue(other, "EFGH5678");
+        assertEquals(5, manager.attemptsLeft(other));
     }
 }
