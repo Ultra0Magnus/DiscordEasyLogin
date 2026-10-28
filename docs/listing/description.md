@@ -1,70 +1,58 @@
-**A second login factor for your Minecraft server, delivered through your own Discord channel.**
+**A second login step for your Minecraft server, using your own Discord channel.**
 
-When someone joins, they are frozen in place and a single-use code is posted to a private Discord
-channel you control. They paste the code in chat, and they're in. No code, no game.
+When a player joins, they're frozen and a one-time code is posted to a private Discord channel you
+control. They type the code in chat and they're in. No code, no game.
 
-A whitelist proves an account *name* is allowed. It doesn't prove the person behind it is you or
-your friends: a stolen or shared account walks straight in. DiscordEasyLogin adds a check on
-something an attacker almost certainly can't reach — your private Discord channel.
+A whitelist checks the account name. It can't tell if a stolen or shared account is being used.
+DiscordEasyLogin adds a check that an attacker can't easily pass: access to your Discord channel.
 
-- **No bot, no token, no account linking.** It posts through an ordinary Discord webhook.
-- **Fails closed.** A bad config, a failed start, or Discord being down never lets anyone in
-  unchecked. During an outage the code goes to your server console, so you can still get in.
-- **Hard to get around.** A waiting player can't move, chat, read chat, use commands or items,
-  open inventories, or be seen. Codes are random, single-use, expire, and allow three attempts.
-- **Doesn't nag.** A verified player isn't asked again for 24 hours (configurable).
-- **Tested on real servers.** Every change goes through an end-to-end suite and a 15-attack
-  adversarial suite, run against real Paper servers on every supported version.
+## Features
+
+- **No bot needed.** It posts through a normal Discord webhook. No token, no account linking.
+- **Safe by default.** If the config is broken or the plugin fails to start, nobody gets in. If
+  Discord is down, the code is printed to the server console instead.
+- **Hard to bypass.** A waiting player can't move, chat, use commands or items, or be seen. Codes
+  are random, single-use, expire after 5 minutes and allow 3 tries.
+- **Not annoying.** Once verified, a player isn't asked again for 24 hours (configurable).
 
 ## Requirements
 
-- **Paper** 26.1.2 or 26.2 (Spigot is not supported; Folia is not supported)
-- **Java 25**
-- An **online-mode** server (normal Mojang authentication). This plugin is a second factor on top
-  of real accounts, not a login system for offline-mode servers.
-- A Discord channel you can add a webhook to
+- Paper 26.1.2 or 26.2 (not Spigot or Folia)
+- Java 25
+- An online-mode server. This is an extra check on top of real accounts, not a login plugin for
+  offline-mode servers.
 
 ## Setup
 
-1. In Discord: channel → **Edit Channel → Integrations → Webhooks → New Webhook → Copy Webhook
-   URL**. Restrict who can view that channel — anyone who can read it can use the codes in it.
-2. Drop the jar into `plugins/` and start the server once.
-3. Put the URL in `plugins/DiscordEasyLogin/config.yml` under `discord.webhook_url` (or in the
-   `DISCORDEASYLOGIN_WEBHOOK` environment variable), then run `/discordeasylogin reload`.
+1. In Discord, open your channel settings: Integrations > Webhooks > New Webhook > Copy Webhook URL.
+   Make sure only you (or people you trust) can see that channel.
+2. Put the jar in `plugins/` and start the server once.
+3. Paste the URL into `plugins/DiscordEasyLogin/config.yml` under `discord.webhook_url`, then run
+   `/discordeasylogin reload`.
 
-Until a webhook is configured, **every login is refused** — on purpose: a security plugin that
-isn't set up must not leave the server open. `/discordeasylogin status` shows what it is doing.
+Until the webhook is set, every login is refused. That's on purpose.
 
-## What it sends, and where
+## What it sends
 
-DiscordEasyLogin talks to exactly one place: **the Discord webhook you configure**. For each join
-that needs verifying it posts the player's **name**, **UUID**, the **code** and its expiry.
+Only to your Discord webhook: the player's name, UUID, the code and when it expires. No IP address
+(unless you add it to the message yourself), no telemetry, no update checker.
 
-It does **not** send the player's IP address unless you add `<ip>` to the message template
-yourself. It sends nothing to the plugin's author, has no telemetry, no analytics, and no update
-checker.
+## Commands
 
-## Commands and permissions
+- `/verify <code>` - enter your code (or just paste it in chat)
+- `/discordeasylogin status` - see what the plugin is doing
+- `/discordeasylogin reload` - reload the config
+- `/discordeasylogin code <player>` - console only: show a player's code if Discord is down
+- `/discordeasylogin trust clear <player|all>` - make players verify again
+- `/discordeasylogin lockdown <on|off>` - block all logins / allow them again
 
-| Command | Who | What it does |
-|---|---|---|
-| `/verify <code>` | any player | Submit a code (pasting it into chat works too) |
-| `/discordeasylogin status` | `discordeasylogin.admin` | Lockdown state, pending codes, trusted players |
-| `/discordeasylogin reload` | `discordeasylogin.admin` | Reload the config |
-| `/discordeasylogin code <player>` | console only | Show a waiting player's code — your way in if Discord is down |
-| `/discordeasylogin trust clear <player\|all>` | `discordeasylogin.admin` | Make players verify again |
-| `/discordeasylogin lockdown <on\|off>` | `discordeasylogin.admin` | Refuse all logins / resume |
-
-`/dlogin` is a short alias. `discordeasylogin.bypass` skips verification entirely and is granted
-to nobody by default — giving it to yourself defeats the plugin.
+Short alias: `/dlogin`. Admin commands need `discordeasylogin.admin`.
 
 ## Good to know
 
-- **Anyone who can read the Discord channel can use any code in it.** Lock the channel down.
-- **Ping yourself on every join request** with `discord.ping_user_ids`, so a login attempt on a
-  stolen account reaches your phone. Nothing else in a message can ever ping anyone.
-- **Upgrading from EasyGuard?** That was this plugin's former name. Remove the old jar; your
-  settings and trusted players are copied over automatically on the first start.
-- Not related to the *EasyLogin* or *DiscordLogin* projects.
+- Anyone who can read the Discord channel can use the codes in it, so keep it private.
+- Add your Discord user ID to `discord.ping_user_ids` to get pinged on every join request.
+- Upgrading from EasyGuard (the old name)? Remove the old jar. Your settings and trusted players
+  are copied over automatically.
 
-Open source under the MIT licence.
+Open source, MIT licence.
