@@ -13,6 +13,8 @@ import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.command.CommandSender;
+import org.bukkit.command.ConsoleCommandSender;
+import org.bukkit.command.RemoteConsoleCommandSender;
 import org.bukkit.entity.Player;
 import org.jetbrains.annotations.NotNull;
 
@@ -52,7 +54,9 @@ public final class EasyGuardCommand implements BasicCommand {
     private void status(CommandSender sender) {
         EasyGuardConfig cfg = plugin.configOrNull();
         sender.sendMessage(Component.text("EasyGuard status", NamedTextColor.GOLD));
-        sender.sendMessage(line("locked down", Boolean.toString(plugin.isLockedDown())));
+        String lockdown = plugin.isConfigFailed() ? "yes - config failed to load"
+                : plugin.isManualLockdown() ? "yes - turned on by an administrator" : "no";
+        sender.sendMessage(line("locked down", lockdown));
         if (cfg == null) {
             sender.sendMessage(Component.text("config failed to load - see the startup log", NamedTextColor.RED));
             return;
@@ -75,8 +79,10 @@ public final class EasyGuardCommand implements BasicCommand {
     }
 
     private void showCode(CommandSender sender, String[] args) {
-        if (sender instanceof Player) {
+        if (!(sender instanceof ConsoleCommandSender) && !(sender instanceof RemoteConsoleCommandSender)) {
             // Printing a live code in chat would defeat the gate; the console is the escape hatch.
+            // Checked as "is a console" rather than "is not a player": a command block is neither,
+            // and with commandBlockOutput on it would broadcast the code to every op.
             sender.sendMessage(Component.text("This command can only be run from the server console.", NamedTextColor.RED));
             return;
         }
@@ -124,10 +130,22 @@ public final class EasyGuardCommand implements BasicCommand {
             sender.sendMessage(Component.text("Usage: /easyguard lockdown <on|off>", NamedTextColor.GRAY));
             return;
         }
-        boolean on = args[1].equalsIgnoreCase("on");
-        plugin.setLockedDown(on);
-        sender.sendMessage(Component.text("Lockdown " + (on ? "enabled - all logins are denied." : "disabled."),
-                on ? NamedTextColor.RED : NamedTextColor.GREEN));
+        String state = args[1].toLowerCase(Locale.ROOT);
+        if (!state.equals("on") && !state.equals("off")) {
+            // Anything but an exact "off" used to switch the lockdown off; a typo must not open the server.
+            sender.sendMessage(Component.text("Usage: /easyguard lockdown <on|off>", NamedTextColor.GRAY));
+            return;
+        }
+        boolean on = state.equals("on");
+        plugin.setManualLockdown(on);
+        if (on) {
+            sender.sendMessage(Component.text("Lockdown enabled - all logins are denied.", NamedTextColor.RED));
+        } else if (plugin.isConfigFailed()) {
+            sender.sendMessage(Component.text("Manual lockdown cleared, but logins stay blocked: the config "
+                    + "failed to load. Fix config.yml and run /easyguard reload.", NamedTextColor.RED));
+        } else {
+            sender.sendMessage(Component.text("Lockdown disabled.", NamedTextColor.GREEN));
+        }
     }
 
     private void persist(CommandSender sender) {

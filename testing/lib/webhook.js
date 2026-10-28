@@ -13,6 +13,9 @@ class MockWebhook {
     this.port = port;
     this.payloads = [];
     this.server = null;
+    // Set these to make Discord slow or broken without taking it down entirely.
+    this.delayMs = 0;
+    this.status = 204;
   }
 
   start() {
@@ -22,8 +25,13 @@ class MockWebhook {
         req.on('data', (chunk) => (body += chunk));
         req.on('end', () => {
           this.record(body);
-          res.writeHead(204);
-          res.end();
+          const reply = () => {
+            if (res.destroyed) return;
+            res.writeHead(this.status);
+            res.end();
+          };
+          if (this.delayMs > 0) setTimeout(reply, this.delayMs);
+          else reply();
         });
       });
       server.once('error', reject);

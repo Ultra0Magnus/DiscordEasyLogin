@@ -3,10 +3,13 @@ package io.github.ultra0magnus.easyguard;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.channels.Channels;
+import java.nio.channels.FileChannel;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
@@ -18,6 +21,9 @@ import java.util.function.LongSupplier;
  * does not send another code to Discord. Persisted as {@code uuid=expiryEpochMillis}.
  */
 public final class TrustedSessionStore {
+
+    /** Static: there is one sessions file, whatever the number of store instances. */
+    private static final Object SAVE_LOCK = new Object();
 
     private final Path file;
     private final LongSupplier clock;
@@ -88,23 +94,36 @@ public final class TrustedSessionStore {
         return expiries.size();
     }
 
+    /**
+     * Saves are called from several threads (the async save after a verification, the prune timer,
+     * {@code trust clear} on the main thread). They are serialized, and each takes its snapshot
+     * inside the lock: otherwise a save that read the sessions before a {@code trust clear all} could
+     * finish writing after it and bring revoked trust back on the next restart.
+     */
     public void save() throws IOException {
-        prune();
-        Properties props = new Properties();
-        expiries.forEach((uuid, expiry) -> props.setProperty(uuid.toString(), Long.toString(expiry)));
+        synchronized (SAVE_LOCK) {
+            prune();
+            Properties props = new Properties();
+            expiries.forEach((uuid, expiry) -> props.setProperty(uuid.toString(), Long.toString(expiry)));
 
-        Path parent = file.getParent();
-        if (parent != null) {
-            Files.createDirectories(parent);
-        }
-        Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
-        try (OutputStream out = Files.newOutputStream(tmp)) {
-            props.store(out, "EasyGuard trusted sessions - uuid=expiryEpochMillis");
-        }
-        try {
-            Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-        } catch (AtomicMoveNotSupportedException e) {
-            Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
+            Path parent = file.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+            Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+            try (FileChannel channel = FileChannel.open(tmp, StandardOpenOption.CREATE,
+                    StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+                 OutputStream out = Channels.newOutputStream(channel)) {
+                props.store(out, "EasyGuard trusted sessions - uuid=expiryEpochMillis");
+                out.flush();
+                // On disk before the rename, so a crash cannot leave an empty file in its place.
+                channel.force(true);
+            }
+            try {
+                Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException e) {
+                Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
+            }
         }
     }
 }

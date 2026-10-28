@@ -31,4 +31,20 @@ public final class ChatProbe extends JavaPlugin implements Listener {
         getLogger().info("LEAKED[cancelled=" + event.isCancelled() + "] "
                 + event.getPlayer().getName() + ": " + text);
     }
+
+    /**
+     * Many chat bridges and formatters still use the deprecated chat event. When any plugin
+     * listens to it, Paper fires it before the modern one, so this is where an older bridge sees
+     * the message.
+     *
+     * NORMAL, not LOWEST: EasyGuard's guard for this event sits at LOWEST, and a listener at that
+     * same priority registered before it would run first. That case is documented as a limit; this
+     * probe checks every priority a real bridge uses.
+     */
+    @SuppressWarnings("deprecation")
+    @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = false)
+    public void onLegacyChat(org.bukkit.event.player.AsyncPlayerChatEvent event) {
+        getLogger().info("LEGACY[cancelled=" + event.isCancelled() + "] "
+                + event.getPlayer().getName() + ": " + event.getMessage());
+    }
 }

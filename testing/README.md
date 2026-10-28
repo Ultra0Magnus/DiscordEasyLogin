@@ -6,8 +6,8 @@ the real Discord.
 
 | Suite | What it does |
 |---|---|
-| `npm run e2e` | Exercises the gate: does it work, and does it fail closed? 9 scenarios |
-| `npm run adversarial` | Tries to *defeat* the gate: bypasses, stolen codes, floods, and interactions with other plugins. 11 scenarios |
+| `npm run e2e` | Exercises the gate: does it work, and does it fail closed? 11 scenarios |
+| `npm run adversarial` | Tries to *defeat* the gate: bypasses, stolen codes, floods, item use, races, and leaks to other plugins. 15 scenarios |
 
 ## Run them
 
@@ -34,50 +34,58 @@ Requires **Java 25** (Paper 26.1+ will not run on anything older) and a built pl
 | trusted rejoin | A verified player reconnecting inside the trust window gets no second code — a lag-out will not spam your Discord channel |
 | verification timeout | An unanswered join cannot occupy the server indefinitely |
 | Discord unreachable | The player is **held rather than waved through**, the code is written to the server console, and that console code still verifies. This is the escape hatch you would actually use during a Discord outage |
+| reload mid-verification | A config reload keeps the code that is already sitting in Discord valid, instead of stranding the player until they time out |
+| manual lockdown | `/easyguard lockdown on` survives a reload, says why it is denying logins, and a typo like `lockdown of` cannot switch it off |
 | broken config on reload | A bad config blocks the door instead of silently leaving it open, and fixing the config reopens it **without a restart** |
-| broken config at startup | The worst case — the plugin cannot configure itself at boot, and every login is denied rather than the server running unprotected |
+| broken config at startup | The worst case — the plugin cannot configure itself at boot, and every login is denied rather than the server running unprotected. **`/easyguard lockdown off` does not change that**: it once did, and the next player got in with no code |
 | recovery | A fixed config plus a restart restores normal joins: **you can always get back in** |
 
 ## What `npm run adversarial` proves
 
-Nine attacks that must fail:
+Fifteen attacks, every one of which must fail:
 
 | Attack | Result |
 |---|---|
+| More joins than `code.max_per_minute` | rate-limit kick, and the webhook stops receiving posts at the cap |
 | Namespaced and built-in commands while unverified (`/minecraft:me`, `/bukkit:help`, `/list`, `/msg`, `/say`, `/easyguard:easyguard status`) | all refused, none produce output |
 | Player B submits the code issued to player A | refused, and A's code is **not** consumed |
 | A code is reused after its session quit | refused; the rejoin gets a fresh one |
 | Rejoining after an out-of-attempts kick | fresh code, attempts reset, old code dead — a kick launders nothing |
-| The same correct code pasted twice | verifies once, records exactly one trusted session |
+| The same correct code pasted twice | verifies once, one trusted session, and the second copy never reaches public chat |
 | A code submitted after `code.ttl_seconds` | refused with an expiry kick |
-| More joins than `code.max_per_minute` | rate-limit kick, and the webhook stops receiving posts at the cap |
+| Reconnecting inside `code.cooldown_seconds` | rate-limit kick and no new code — one account cannot flood your channel |
 | A non-whitelisted stranger connects | denied by the vanilla whitelist, and **zero** codes posted — strangers scanning your tunnel cannot make your channel ring |
-| Brute force | out of scope by construction: codes are bound to the submitting player, 3 attempts, 8 characters from 31 symbols |
+| `/tp` of a held player from the console | the player stays put, and the freeze still works afterwards |
+| Using items while held: throwing a snowball, drinking milk | nothing is used; milk would have cleared the blindness |
+| Another player chats while someone is held | the held player never receives it |
+| A player joins *after* someone was held | cannot see them, not even in the tab list |
+| Discord fails slowly, the account quits and rejoins in between | the late failure for the dead session leaves the new one held; the new one's own failure refuses it |
+| Another plugin listens to chat — at `MONITOR` on the modern event, at `NORMAL` on the legacy one | it sees an empty, cancelled message, never what the held player typed |
 
-Plus two **characterised** scenarios, which assert what the plugin actually does rather than
-what it ought to do, so a behaviour change fails loudly instead of passing silently.
+Brute force is out of scope by construction: a code is bound to the player it was issued to,
+with 3 attempts at 8 characters from 31 symbols.
 
-### Findings this suite records
+### Findings these tests guard
 
-These are printed as `NOTE:` lines at the end of every run. None is a way past the gate; all
-three are worth knowing:
+Each of these was found in a security review, reproduced by one of the attacks above against the
+code of the time, and then fixed. The test stays to keep it fixed.
 
-1. **`code.cooldown_seconds` does not survive a reconnect.** `GateService.onQuit` calls
-   `VerificationManager.cancel`, which does `lastIssued.remove(player)` — quitting clears your
-   own cooldown. One whitelisted account can loop reconnects and post up to
-   `code.max_per_minute` codes per minute (default 20) instead of the 6/min a 10-second
-   cooldown implies. Makes your Discord channel noisy; does not let anyone in.
-2. **A teleport moves a held player.** A `PlayerMoveEvent` handler does not receive
-   `PlayerTeleportEvent` in Bukkit, so the freeze does not cover teleports. Another plugin
-   (Multiverse spawn handling) or an admin `/tp` can relocate an invisible, unverified player,
-   and their own next step yanks them back to the original anchor. They still cannot act or
-   verify.
-3. **A `MONITOR`-priority chat listener in another plugin can read what an unverified player
-   types.** EasyGuard cancels the message at `LOWEST` so it never reaches public chat, but
-   cancelling does not hide the event from later listeners. A chat-bridge plugin (DiscordSRV
-   and friends) that ignores the cancelled flag could forward a verification code. Verified
-   with `leak-probe/`, a test-only plugin built on demand — the suite sends a canary string,
-   never a real code.
+1. **Item use while held.** Bukkit creates an air click's `PlayerInteractEvent` already
+   cancelled, so a handler with `ignoreCancelled = true` never saw it: bows, potions, ender pearls
+   and milk all worked for an unverified player.
+2. **A slow Discord failure freed the next login.** The failure handler asked only "is this
+   account held?" — true for the *new* session after a quick reconnect — and dropped that
+   session's hold. With `log_code_to_console_on_failure: false`, that was a way in. Holds now
+   carry a per-session token.
+3. **Legacy chat listeners saw codes.** When any plugin listens to the deprecated chat event,
+   Paper fires it first, uncancelled. EasyGuard now guards that event too, but only once some
+   plugin listens to it, so it never switches a server onto the legacy chat path by itself.
+4. **Teleports moved held players**, because `PlayerTeleportEvent` has its own handler list.
+5. **Quitting reset the per-player cooldown**, so a reconnect loop could post a code each time.
+6. **Held players received public chat, and players who joined later could see them.**
+
+`leak-probe/` is a test-only plugin, built on demand, that stands in for a chat bridge. The suite
+sends a canary string to it, never a real code.
 
 ## Options
 
@@ -142,7 +150,13 @@ they are commented as such.
 - **Your plugins' real configs.** `EASYGUARD_EXTRA_PLUGINS` installs the jars with defaults,
   which catches event-priority and startup interactions but not config-driven behaviour.
 - **`easyguard.bypass`** — needs op or a permissions plugin to mean anything; it is a single
-  permission check in `GateService`.
+  permission check in `GateService`. Note that a permissions plugin granting `*` grants it too.
+- **A legacy chat listener at `LOWEST`, registered before EasyGuard's guard.** Same priority means
+  registration order decides, so it would still see the text first. No realistic bridge listens
+  that early; the probe checks `NORMAL`.
+- **Armour stands, fishing rods, mounts and respawn blindness.** Guarded in code, but each would
+  need a world fixture (a stand, a horse, a death) the suite does not build. The item-use attack
+  covers the underlying bypass these share.
 - **Real Discord delivery.** Deliberately: a test that posts to your channel is a test you
   stop running. `DiscordWebhookNotifierTest` covers the HTTP behaviour, including that a 5xx,
   a timeout and a dead socket all report failure — which is what fail-closed depends on.

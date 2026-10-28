@@ -179,6 +179,57 @@ async function discordUnreachable({ server, webhook, connect }) {
   }
 }
 
+/**
+ * A config reload while someone is waiting must not strand them. A reload used to throw away every
+ * pending code, so the code already sitting in Discord stopped working until the player timed out.
+ */
+async function reloadKeepsPendingCode({ server, webhook, connect }) {
+  const player = await join('EGReload', connect);
+  try {
+    const code = await awaitCode(webhook, 'EGReload');
+    await player.awaitChat(PROMPT);
+
+    await server.console('easyguard reload', /EasyGuard reloaded\./);
+
+    player.say(code);
+    await player.awaitChat('Verified. Welcome,');
+  } finally {
+    await player.quit();
+  }
+}
+
+/**
+ * A lockdown someone turned on on purpose must survive a config reload; it used to be silently
+ * lifted by any successful reload. It must also say why, rather than blaming a broken config.
+ */
+async function manualLockdownSurvivesReload({ server, connect }) {
+  await server.console('easyguard lockdown on', /Lockdown enabled/);
+  try {
+    await server.console('easyguard reload', /EasyGuard reloaded\./);
+
+    const denied = await attemptJoin('EGPaused', connect);
+    expect(!denied.spawned, 'a reload lifted a manual lockdown', { player: denied, server });
+    expect(
+      (denied.disconnect || '').includes('An administrator has paused all logins.'),
+      `unexpected manual lockdown reason: ${(denied.disconnect || '(none)').replace(/\n/g, ' / ')}`,
+      { player: denied, server },
+    );
+
+    // Anything but on/off used to switch the lockdown off.
+    await server.console('easyguard lockdown of', /Usage: \/easyguard lockdown/);
+    const stillDenied = await attemptJoin('EGPaused2', connect);
+    expect(!stillDenied.spawned, 'a mistyped "lockdown of" turned the lockdown off', {
+      player: stillDenied,
+      server,
+    });
+  } finally {
+    await server.console('easyguard lockdown off', /Lockdown disabled\./);
+  }
+
+  const player = await join('EGUnpaused', connect);
+  await player.quit();
+}
+
 /** A broken config must block the door, and a fixed one must reopen it without a restart. */
 async function reloadLockdown({ server, connect, config }) {
   server.writePluginConfig(config.broken);
@@ -230,6 +281,21 @@ async function startupLockdown({ server, connect, config }) {
     `unexpected startup lockdown reason: ${(denied.disconnect || '(none)').replace(/\n/g, ' / ')}`,
     { player: denied, server },
   );
+
+  // The tempting fix for a locked server is "lockdown off". With no config loaded, that used to
+  // lift the lockdown and let the next player in with no code at all. It must change nothing.
+  const from = server.mark();
+  await server.console('easyguard lockdown off', /Lockdown disabled\.|Manual lockdown cleared/);
+  const stillDenied = await attemptJoin('EGLockOff', connect);
+  expect(!stillDenied.spawned, '"lockdown off" opened a server whose config never loaded', {
+    player: stillDenied,
+    server,
+  });
+  expect(
+    server.matchLog(/Manual lockdown cleared, but logins stay blocked/, from) !== null,
+    '"lockdown off" did not explain that a failed config still blocks logins',
+    { server },
+  );
 }
 
 /** And the answer to "can I get back in": fix the config, restart, play. */
@@ -255,7 +321,9 @@ module.exports = [
   { name: 'trusted rejoin issues no second code', run: trustedRejoin },
   { name: 'unanswered join is kicked on timeout', run: verificationTimeout },
   { name: 'Discord unreachable: held, code to console, console code works', run: discordUnreachable },
+  { name: 'a reload mid-verification keeps the code valid', run: reloadKeepsPendingCode },
+  { name: 'a manual lockdown survives a reload and ignores typos', run: manualLockdownSurvivesReload },
   { name: 'broken config on reload locks the door, a fix reopens it', run: reloadLockdown },
-  { name: 'broken config at startup denies every login', run: startupLockdown },
+  { name: 'broken config at startup denies every login, even after "lockdown off"', run: startupLockdown },
   { name: 'recovery: fixed config restores normal joins', run: recovery },
 ];

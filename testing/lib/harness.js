@@ -48,13 +48,14 @@ function pluginConfig({
   verificationTimeout = 120,
   trustHours = 24,
   logCodeToConsole = true,
+  discordTimeout = 2,
 } = {}) {
   return [
     `enabled: ${enabled}`,
     'discord:',
     `  webhook_url: "${webhookUrl ?? `http://127.0.0.1:${webhookPort}/hook`}"`,
     '  allow_non_discord_host: true',
-    '  timeout_seconds: 2',
+    `  timeout_seconds: ${discordTimeout}`,
     'code:',
     `  length: 8`,
     `  ttl_seconds: ${ttlSeconds}`,

@@ -12,6 +12,9 @@ import java.util.function.LongSupplier;
 /**
  * Holds the outstanding verification codes and enforces their lifetime, attempt budget and issue rate.
  * Codes live in memory only and never touch disk.
+ *
+ * <p>One instance lives for the whole plugin lifetime: a config reload swaps the {@link Limits}
+ * with {@link #configure}, so codes already sent to Discord and cooldowns already running survive it.
  */
 public final class VerificationManager {
 
@@ -24,44 +27,49 @@ public final class VerificationManager {
         }
     }
 
+    public record Limits(long codeTtlMillis, int maxAttempts, long perPlayerCooldownMillis, int maxCodesPerMinute) {
+    }
+
     private final Map<UUID, Pending> pending = new ConcurrentHashMap<>();
     private final Map<UUID, Long> lastIssued = new ConcurrentHashMap<>();
     private final Deque<Long> recentIssues = new ArrayDeque<>();
     private final LongSupplier clock;
 
-    private final long codeTtlMillis;
-    private final int maxAttempts;
-    private final long perPlayerCooldownMillis;
-    private final int maxCodesPerMinute;
+    private volatile Limits limits;
 
-    public VerificationManager(long codeTtlMillis, int maxAttempts, long perPlayerCooldownMillis,
-                               int maxCodesPerMinute, LongSupplier clock) {
-        this.codeTtlMillis = codeTtlMillis;
-        this.maxAttempts = maxAttempts;
-        this.perPlayerCooldownMillis = perPlayerCooldownMillis;
-        this.maxCodesPerMinute = maxCodesPerMinute;
+    public VerificationManager(Limits limits, LongSupplier clock) {
+        this.limits = limits;
         this.clock = clock;
+    }
+
+    /** Applies new limits to future codes. Codes already issued keep the TTL and attempts they were issued with. */
+    public void configure(Limits limits) {
+        this.limits = limits;
     }
 
     /**
      * @return true if a new code may be issued to this player right now.
      */
     public boolean canIssue(UUID player) {
+        Limits current = limits;
         long now = clock.getAsLong();
         Long last = lastIssued.get(player);
-        if (last != null && now - last < perPlayerCooldownMillis) {
+        if (last != null && now - last < current.perPlayerCooldownMillis()) {
             return false;
         }
         synchronized (recentIssues) {
             pruneRecentIssues(now);
-            return recentIssues.size() < maxCodesPerMinute;
+            return recentIssues.size() < current.maxCodesPerMinute();
         }
     }
 
     public Pending issue(UUID player, String code) {
+        Limits current = limits;
         long now = clock.getAsLong();
-        Pending entry = new Pending(code, now, now + codeTtlMillis, maxAttempts);
+        Pending entry = new Pending(code, now, now + current.codeTtlMillis(), current.maxAttempts());
         pending.put(player, entry);
+        // Entries past the cooldown can no longer block anyone; dropping them keeps the map bounded.
+        lastIssued.values().removeIf(issuedAt -> now - issuedAt >= current.perPlayerCooldownMillis());
         lastIssued.put(player, now);
         synchronized (recentIssues) {
             pruneRecentIssues(now);
@@ -83,6 +91,8 @@ public final class VerificationManager {
         if (MessageDigest.isEqual(candidate.getBytes(StandardCharsets.UTF_8),
                 entry.code().getBytes(StandardCharsets.UTF_8))) {
             pending.remove(player);
+            // A verified player is not who the cooldown exists to slow down.
+            lastIssued.remove(player);
             return Outcome.SUCCESS;
         }
         Pending spent = entry.withAttemptSpent();
@@ -103,9 +113,13 @@ public final class VerificationManager {
         return entry == null ? 0 : entry.attemptsLeft();
     }
 
+    /**
+     * Drops the player's pending code (quit, timeout, kick). The cooldown is deliberately kept:
+     * clearing it here is what let one account reconnect in a loop and post a fresh code to
+     * Discord every time.
+     */
     public void cancel(UUID player) {
         pending.remove(player);
-        lastIssued.remove(player);
     }
 
     public void clearAll() {

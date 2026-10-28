@@ -2,6 +2,9 @@ package io.github.ultra0magnus.easyguard;
 
 import java.net.URI;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.regex.Pattern;
 import org.bukkit.configuration.file.FileConfiguration;
 
 /**
@@ -15,6 +18,7 @@ public record EasyGuardConfig(
         String webhookUsername,
         Duration webhookTimeout,
         String discordMentionPrefix,
+        List<String> pingUserIds,
         int codeLength,
         Duration codeTtl,
         int maxAttempts,
@@ -44,10 +48,17 @@ public record EasyGuardConfig(
             String kickUnavailable,
             String kickRateLimited,
             String kickLockdown,
+            String kickManualLockdown,
             String discordTemplate) {
     }
 
     public static final String WEBHOOK_ENV_VAR = "EASYGUARD_DISCORD_WEBHOOK";
+
+    /** Discord user IDs are snowflakes: 17 to 20 digits. */
+    private static final Pattern DISCORD_USER_ID = Pattern.compile("\\d{17,20}");
+
+    /** Discord rejects an allowed_mentions.users list longer than this. */
+    private static final int MAX_PING_USERS = 100;
 
     public static EasyGuardConfig load(FileConfiguration cfg) {
         boolean enabled = cfg.getBoolean("enabled", true);
@@ -57,7 +68,9 @@ public record EasyGuardConfig(
         String rawUrl = envUrl != null && !envUrl.isBlank() ? envUrl : cfg.getString("discord.webhook_url", "");
         URI endpoint = DiscordWebhookNotifier.validateEndpoint(rawUrl, allowNonDiscordHost);
 
-        int codeLength = requireRange(cfg.getInt("code.length", 8), 4, 32, "code.length");
+        // At least 6: with the most generous attempt and rate limits, a 4-character code could be
+        // brute-forced in about an hour and a half.
+        int codeLength = requireRange(cfg.getInt("code.length", 8), 6, 32, "code.length");
         int maxAttempts = requireRange(cfg.getInt("code.max_attempts", 3), 1, 10, "code.max_attempts");
         int maxPerMinute = requireRange(cfg.getInt("code.max_per_minute", 20), 1, 500, "code.max_per_minute");
         int trustHours = requireRange(cfg.getInt("trust.duration_hours", 24), 0, 24 * 365, "trust.duration_hours");
@@ -65,9 +78,10 @@ public record EasyGuardConfig(
         return new EasyGuardConfig(
                 enabled,
                 endpoint,
-                cfg.getString("discord.username", "EasyGuard"),
+                webhookUsername(cfg.getString("discord.username", "EasyGuard")),
                 Duration.ofSeconds(requireRange(cfg.getInt("discord.timeout_seconds", 5), 1, 30, "discord.timeout_seconds")),
                 cfg.getString("discord.mention_prefix", ""),
+                loadPingUserIds(cfg),
                 codeLength,
                 Duration.ofSeconds(requireRange(cfg.getInt("code.ttl_seconds", 300), 30, 3600, "code.ttl_seconds")),
                 maxAttempts,
@@ -99,8 +113,47 @@ public record EasyGuardConfig(
                 msg(cfg, "kick_unavailable", "<red>Verification is unavailable right now.</red><newline><gray>The server could not reach Discord. Try again shortly.</gray>"),
                 msg(cfg, "kick_rate_limited", "<red>Too many verification requests.</red><newline><gray>Wait a moment and reconnect.</gray>"),
                 msg(cfg, "kick_lockdown", "<red>This server is locked down.</red><newline><gray>EasyGuard could not start, so logins are blocked.</gray>"),
+                msg(cfg, "kick_manual_lockdown", "<red>This server is locked down.</red><newline><gray>An administrator has paused all logins.</gray>"),
                 cfg.getString("messages.discord_template",
                         "**Join request**\nPlayer: `<player>`\nUUID: `<uuid>`\nIP: `<ip>`\nCode: **<code>**\nExpires in <ttl>."));
+    }
+
+    /**
+     * Discord rejects every post (HTTP 400) from a webhook name containing "discord" or "clyde",
+     * which would turn a cosmetic setting into a server nobody can join. Refuse it at load instead.
+     */
+    static String webhookUsername(String raw) {
+        String name = raw == null ? "" : raw.trim();
+        String lower = name.toLowerCase(java.util.Locale.ROOT);
+        if (name.isEmpty() || name.length() > 80 || lower.contains("discord") || lower.contains("clyde")) {
+            throw new IllegalArgumentException("discord.username must be 1-80 characters and must not contain "
+                    + "'discord' or 'clyde' (Discord rejects those), got '" + name + "'");
+        }
+        return name;
+    }
+
+    /**
+     * The people to ping for every join request. Validated strictly: these go into the webhook's
+     * allowed_mentions list, which is the only thing that lets a message ping anyone at all.
+     */
+    static List<String> loadPingUserIds(FileConfiguration cfg) {
+        List<String> ids = new ArrayList<>();
+        for (Object raw : cfg.getList("discord.ping_user_ids", List.of())) {
+            String id = String.valueOf(raw).trim();
+            if (!DISCORD_USER_ID.matcher(id).matches()) {
+                throw new IllegalArgumentException("discord.ping_user_ids must contain Discord user IDs "
+                        + "(17-20 digits; right-click your name with Developer Mode on -> Copy User ID), got '"
+                        + id + "'");
+            }
+            if (!ids.contains(id)) {
+                ids.add(id);
+            }
+        }
+        if (ids.size() > MAX_PING_USERS) {
+            throw new IllegalArgumentException("discord.ping_user_ids can list at most " + MAX_PING_USERS
+                    + " users, got " + ids.size());
+        }
+        return List.copyOf(ids);
     }
 
     private static String msg(FileConfiguration cfg, String key, String fallback) {

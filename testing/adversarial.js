@@ -4,9 +4,9 @@
 //
 // Usage:  npm run adversarial        (add -- --keep to retain the scratch server)
 //
-// Every scenario is an attack that must fail, except the last two, which characterise
-// behaviour that is neither clearly right nor clearly wrong: they report what they observed
-// and assert it, so a future change that alters it fails loudly.
+// Every scenario is an attack that must fail. Several started life as findings that passed only
+// because the plugin was wrong (teleports, item use, chat leaks, the reconnect cooldown, a late
+// Discord failure freeing the next session); they now assert the fixed behaviour.
 //
 // Set EASYGUARD_EXTRA_PLUGINS=/path/to/jars to run this beside your real plugin set — that is
 // the gap no clean-server suite can close.
@@ -192,7 +192,7 @@ async function kickThenRejoin({ server, webhook, connect }) {
   }
 }
 
-/** A double-paste must not verify twice or record two trusted sessions. */
+/** A double-paste must not verify twice, record two trusted sessions, or leak the code to chat. */
 async function doubleSubmit({ server, webhook, connect }) {
   const before = trustedSessionCount(server);
   const player = await join('EGDouble', connect);
@@ -203,7 +203,14 @@ async function doubleSubmit({ server, webhook, connect }) {
     player.say(code);
 
     await player.awaitChat('Verified. Welcome,');
-    await player.awaitChat('You have nothing to verify.');
+    // The second copy is either refused ("nothing to verify") or, if it lands after the release,
+    // silently dropped. What it must never do is appear in public chat: a race once put it there.
+    await delay(1500);
+    expect(
+      !player.saw(`<EGDouble> ${code}`) && !player.chat.some((line) => line.includes(code)),
+      'the second paste of the code was broadcast to public chat',
+      { player, server },
+    );
 
     const after = await waitFor(
       () => {
@@ -283,16 +290,10 @@ async function floodTheChannel({ server, webhook, connect, applyConfig }) {
 }
 
 /**
- * FINDING, characterised: the per-player cooldown does NOT survive a reconnect.
- *
- * `GateService.onQuit` calls `VerificationManager.cancel`, which does `lastIssued.remove(player)`
- * — so quitting erases your own cooldown. One account can reconnect in a loop and mint a fresh
- * code every time; only the server-wide `code.max_per_minute` cap limits the damage.
- *
- * This test pins the behaviour as it actually is. If the cooldown is ever made to survive a
- * reconnect, this fails and should be rewritten to assert the kick instead.
+ * A reconnect loop must not mint codes. Quitting used to clear the per-player cooldown, so one
+ * account could post a fresh code to your channel on every reconnect.
  */
-async function reconnectCooldown({ server, webhook, connect, applyConfig, notes }) {
+async function reconnectCooldown({ server, webhook, connect, applyConfig }) {
   await applyConfig({ cooldownSeconds: 10, maxPerMinute: 500 });
   try {
     const first = await join('EGCool', connect);
@@ -301,32 +302,17 @@ async function reconnectCooldown({ server, webhook, connect, applyConfig, notes 
     await first.quit();
 
     const again = await attemptJoin('EGCool', connect);
-    let outcome;
-    try {
-      const code = await awaitNewCode(webhook, 'EGCool', seen, 12000);
-      outcome = `a fresh code (${code.length} chars) was issued straight away`;
-    } catch {
-      outcome = 'no new code was issued';
-    }
-
-    const rateLimited = (again.disconnect || '').includes('Too many verification requests.');
-    notes.push(
-      rateLimited
-        ? 'The per-player cooldown survives a reconnect and kicked the rejoining player.'
-        : 'FINDING: code.cooldown_seconds does NOT survive a reconnect — quitting clears it '
-          + `(GateService.onQuit -> VerificationManager.cancel -> lastIssued.remove), so ${outcome}. `
-          + 'One whitelisted account can loop reconnects and post up to code.max_per_minute codes '
-          + 'to your Discord channel every minute (default 20) instead of the 6/min the 10s '
-          + 'cooldown implies. Not a way past the gate; it makes your channel noisy.',
-    );
-
+    const reason = await again.awaitDisconnect(20000);
     expect(
-      !rateLimited,
-      'the per-player cooldown now survives a reconnect — behaviour improved; rewrite this '
-        + 'scenario to assert the rate-limit kick',
+      reason.includes('Too many verification requests.'),
+      `expected a cooldown kick on an immediate rejoin, got: ${reason.replace(/\n/g, ' / ')}`,
       { player: again, server },
     );
-    await again.quit().catch(() => {});
+    expect(
+      webhook.countFor('EGCool') === seen,
+      'the immediate rejoin still posted a fresh code to the webhook',
+      { player: again, server },
+    );
   } finally {
     await applyConfig();
   }
@@ -356,12 +342,11 @@ async function whitelistRunsFirst({ server, webhook, connect }) {
 }
 
 /**
- * Characterising, not judging. Held players are returned to their anchor by a PlayerMoveEvent
- * handler, and PlayerTeleportEvent extends PlayerMoveEvent — so a teleport from the console or
- * from another plugin (Multiverse's join handling, an admin rescuing someone) may be overridden.
- * Either answer is worth knowing; this pins whichever one is true.
+ * A teleport from the console or another plugin (Multiverse, an admin /tp) must not move an
+ * unverified player. Bukkit delivers teleports to PlayerTeleportEvent handlers only, so the
+ * PlayerMoveEvent freeze alone never saw them.
  */
-async function teleportWhileHeld({ server, webhook, connect, notes }) {
+async function teleportWhileHeld({ server, webhook, connect }) {
   const player = await join('EGTeleport', connect);
   try {
     await awaitCode(webhook, 'EGTeleport');
@@ -369,39 +354,73 @@ async function teleportWhileHeld({ server, webhook, connect, notes }) {
     const anchor = player.blockPosition();
 
     await server.console('tp EGTeleport 120 -60 120', /Teleported|No player was found/);
+    // Proving a negative: there is no event for a teleport that must not happen.
     await delay(2500);
 
-    const afterTeleport = player.blockPosition();
-    const distance = Math.hypot(afterTeleport.x - anchor.x, afterTeleport.z - anchor.z);
-    const moved = distance > 5;
+    const now = player.blockPosition();
+    const distance = Math.hypot(now.x - anchor.x, now.z - anchor.z);
+    expect(distance < 5, `a console teleport moved a held player ${distance.toFixed(0)} blocks`, {
+      player,
+      server,
+    });
 
-    // If the teleport landed, the anchor is now stale — so check what the player's own next step
-    // does: being yanked back across 100+ blocks is a different problem from staying put.
+    // Blocking teleports must not break the freeze, which itself sends the player back to the
+    // anchor by teleport: an earlier version of this fix let held players walk away.
     const walk = await player.walkForward();
-    const backAtAnchor = Math.hypot(walk.after.x - anchor.x, walk.after.z - anchor.z) < 5;
+    expect(!walk.moved, `a held player could walk after the teleport attempt: ${JSON.stringify(walk)}`, {
+      player,
+      server,
+    });
 
-    notes.push(
-      moved
-        ? `FINDING: a console or plugin teleport MOVES a held, unverified player (${distance.toFixed(0)} `
-          + 'blocks). A PlayerMoveEvent handler does not receive PlayerTeleportEvent in Bukkit, so '
-          + 'the freeze does not cover teleports. The gate still holds — they cannot act or verify '
-          + `— but another plugin can relocate an invisible, unverified player, and their own next `
-          + `step ${backAtAnchor ? 'yanks them back to the original anchor' : 'leaves them where they were put'}. `
-          + 'Relevant with Multiverse spawn handling on your server.'
-        : 'A held player is snapped back to their anchor even by a console/plugin teleport, so '
-          + 'Multiverse spawn handling and admin /tp on an unverified player are overridden.',
-    );
-
-    // Whatever the movement outcome, the security property must hold: still held, still unverified.
-    expect(!player.saw('Verified. Welcome,'), 'a teleport verified the player', { player, server });
     player.say('STILLWRONG');
     await player.awaitChat('attempt(s) left.');
+  } finally {
+    await player.quit();
+  }
+}
 
-    // Pinned so a future change to the freeze logic surfaces here rather than silently.
+/**
+ * An unverified player must not be able to *use* anything. Bukkit creates an air click's
+ * PlayerInteractEvent already cancelled, so a handler with ignoreCancelled = true never saw it:
+ * bows, potions, ender pearls and milk (which clears the blindness) all worked while held.
+ */
+async function itemUseWhileHeld({ server, webhook, connect }) {
+  const player = await join('EGItems', connect);
+  try {
+    await awaitCode(webhook, 'EGItems');
+    await player.awaitChat(PROMPT);
+    const { bot } = player;
+    const snowball = bot.registry.itemsByName.snowball.id;
+    const milk = bot.registry.itemsByName.milk_bucket.id;
+
+    await server.console('give EGItems snowball 16', /Gave|No player was found/);
+    await server.console('give EGItems milk_bucket 1', /Gave|No player was found/);
+    await waitFor(() => bot.inventory.count(snowball) === 16 && bot.inventory.count(milk) === 1, {
+      timeout: 10000,
+      describe: 'the items to arrive in the held player\'s inventory',
+    });
+
+    // Throw at the sky: a right-click on air, the case Bukkit pre-cancels.
+    await bot.look(0, Math.PI / 2, true);
+    await bot.equip(snowball, 'hand');
+    bot.activateItem();
+    await delay(1500);
+    bot.deactivateItem();
     expect(
-      moved,
-      'the freeze now overrides teleports too — behaviour changed; re-read the note above and '
-        + 'update this expectation',
+      bot.inventory.count(snowball) === 16,
+      `a held player threw a snowball (${16 - bot.inventory.count(snowball)} used)`,
+      { player, server },
+    );
+
+    // Drinking milk would remove the blindness that hides the base.
+    await bot.equip(milk, 'hand');
+    bot.activateItem();
+    await delay(2500);
+    bot.deactivateItem();
+    await delay(500);
+    expect(
+      bot.inventory.count(milk) === 1,
+      'a held player drank milk, which clears the blindness',
       { player, server },
     );
   } finally {
@@ -409,14 +428,98 @@ async function teleportWhileHeld({ server, webhook, connect, notes }) {
   }
 }
 
+/** Unverified players don't get to read the server's chat while they wait. */
+async function chatNotReceivedWhileHeld({ server, webhook, connect }) {
+  const talker = await join('EGTalker', connect);
+  let listener;
+  try {
+    talker.say(await awaitCode(webhook, 'EGTalker'));
+    await talker.awaitChat('Verified. Welcome,');
+
+    listener = await join('EGEavesdrop', connect);
+    await awaitCode(webhook, 'EGEavesdrop');
+    await listener.awaitChat(PROMPT);
+
+    const secret = 'base-coords-are-1234-5678';
+    talker.say(secret);
+    // Positive control first: the message really was sent and delivered to someone.
+    await talker.awaitChat(secret);
+    await delay(1000);
+    expect(!listener.saw(secret), 'a held, unverified player received public chat', {
+      player: listener,
+      server,
+    });
+  } finally {
+    if (listener) await listener.quit();
+    await talker.quit();
+  }
+}
+
+/** Hiding must cover players who join *after* someone was held, not just those already online. */
+async function lateJoinerCannotSeeHeld({ server, webhook, connect }) {
+  const held = await join('EGHidden', connect);
+  let watcher;
+  try {
+    await awaitCode(webhook, 'EGHidden');
+    await held.awaitChat(PROMPT);
+
+    watcher = await join('EGWatcher', connect);
+    watcher.say(await awaitCode(webhook, 'EGWatcher'));
+    await watcher.awaitChat('Verified. Welcome,');
+    // Positive control: the watcher's own tab-list entry proves player info is arriving at all.
+    await waitFor(() => watcher.bot.players.EGWatcher, {
+      timeout: 10000,
+      describe: 'the watcher to receive the player list',
+    });
+    await delay(1000);
+
+    expect(
+      !watcher.bot.players.EGHidden,
+      'a player who joined later can see the held, "invisible" player in the tab list',
+      { player: watcher, server },
+    );
+  } finally {
+    if (watcher) await watcher.quit();
+    await held.quit();
+  }
+}
+
 /**
- * Does an unverified player's typed code reach other plugins? EasyGuard cancels the chat event
- * at LOWEST, but cancelling does not stop later listeners from seeing it. LeakProbe stands in
- * for a Discord chat bridge, listening at MONITOR without ignoring cancelled events.
- *
- * A canary string is used rather than a real code, so nothing secret is written to the log.
+ * A slow Discord failure for a dead session must not release the next one. Before sessions were
+ * tracked, the failure callback only asked "is this UUID held?" — true for the *new* session — and
+ * then dropped that session's hold, leaving it online and free.
  */
-async function chatLeakToOtherPlugins({ server, webhook, connect, notes }) {
+async function lateFailureCannotReleaseNextSession({ server, webhook, connect, applyConfig }) {
+  // Discord hangs past the plugin's timeout; with the console fallback off, a failure kicks.
+  await applyConfig({ logCodeToConsole: false, discordTimeout: 6 });
+  webhook.delayMs = 10000;
+  let second;
+  try {
+    const first = await join('EGRace', connect);
+    await first.quit();
+    second = await join('EGRace', connect);
+
+    // Both deliveries time out. The first session's late failure must leave the second alone,
+    // and the second's own failure must kick it — not leave it free.
+    const reason = await second.awaitDisconnect(25000);
+    expect(
+      reason.includes('Verification is unavailable'),
+      `expected the second session to be refused when its own delivery failed, got: ${reason.replace(/\n/g, ' / ')}`,
+      { player: second, server },
+    );
+  } finally {
+    webhook.delayMs = 0;
+    if (second) await second.quit().catch(() => {});
+    await applyConfig();
+  }
+}
+
+/**
+ * Does an unverified player's typed text reach other plugins? LeakProbe stands in for a chat
+ * bridge on both the modern event (at MONITOR) and the deprecated one (at LOWEST, the earliest any
+ * plugin can look). A canary is used rather than a real code, so nothing secret reaches the log.
+ */
+async function chatLeakToOtherPlugins({ server, webhook, connect }) {
   const canary = 'LEAKCANARY7788';
   const player = await join('EGLeak', connect);
   try {
@@ -428,50 +531,65 @@ async function chatLeakToOtherPlugins({ server, webhook, connect, notes }) {
     await player.awaitChat('attempt(s) left.');
     await delay(1500);
 
-    const leak = server.matchLog(new RegExp(`LEAKED\\[cancelled=(\\w+)\\] EGLeak: (${canary})`), from);
+    const modern = server.matchLog(new RegExp(`LEAKED\\[cancelled=\\w+\\] EGLeak: .*${canary}`), from);
+    const legacy = server.matchLog(new RegExp(`LEGACY\\[cancelled=\\w+\\] EGLeak: .*${canary}`), from);
+    expect(!modern, `a MONITOR chat listener read the held player's text: ${modern?.[0]}`, { player, server });
+    expect(!legacy, `a legacy chat listener read the held player's text: ${legacy?.[0]}`, { player, server });
 
-    notes.push(
-      leak
-        ? 'A MONITOR-priority chat listener in another plugin CAN read what an unverified player '
-          + `types (observed cancelled=${leak[1]}). EasyGuard keeps codes out of public chat, but a `
-          + 'chat-bridge plugin that ignores the cancelled flag could forward one. You run no chat '
-          + 'bridge today — worth remembering before adding DiscordSRV or similar.'
-        : 'A MONITOR-priority chat listener in another plugin could NOT read what an unverified '
-          + 'player types: the message does not reach other plugins at all.',
-    );
-
-    expect(
-      leak !== null,
-      'the chat event no longer reaches MONITOR listeners — behaviour changed for the better; '
-        + 'update this expectation',
-      { player, server },
-    );
+    // Counted as exactly one attempt: blanking the text for others must not blank it for the gate,
+    // and capturing it from both chat events must not submit it twice.
+    expect(player.saw('2 attempt(s) left.'), 'the canary was not processed as a code attempt', {
+      player,
+      server,
+    });
+    expect(!player.saw('1 attempt(s) left.'), 'one message was counted as two attempts', {
+      player,
+      server,
+    });
   } finally {
     await player.quit();
   }
 }
 
 const SCENARIOS = [
+  // First: the per-minute cap counts every code issued in the last minute, and a config reload
+  // deliberately does not reset it, so this needs a server that has issued no codes yet.
+  { name: 'the channel cap stops a webhook flood', run: floodTheChannel },
   { name: 'namespaced and built-in commands are all refused', run: commandBypass },
   { name: "another player's code cannot be used or burned", run: crossPlayerCode },
   { name: 'a code dies with the session that minted it', run: codeDiesOnQuit },
   { name: 'a kick grants no new code and no extra attempts', run: kickThenRejoin },
   { name: 'a double-paste verifies once and trusts once', run: doubleSubmit },
   { name: 'an expired code is refused', run: expiredCode },
-  { name: 'the channel cap stops a webhook flood', run: floodTheChannel },
-  { name: 'a reconnect loop evades the per-player cooldown (characterised)', run: reconnectCooldown },
+  { name: 'a reconnect inside the cooldown gets no new code', run: reconnectCooldown },
   { name: 'the whitelist is checked before any code is issued', run: whitelistRunsFirst },
-  { name: 'teleporting a held player (characterised)', run: teleportWhileHeld },
-  { name: 'chat leaking to other plugins (characterised)', run: chatLeakToOtherPlugins },
+  { name: 'a teleport cannot move a held player', run: teleportWhileHeld },
+  { name: 'a held player cannot use items (snowball, milk)', run: itemUseWhileHeld },
+  { name: 'a held player does not receive public chat', run: chatNotReceivedWhileHeld },
+  { name: 'a later joiner cannot see a held player', run: lateJoinerCannotSeeHeld },
+  { name: "a late Discord failure cannot free the next session", run: lateFailureCannotReleaseNextSession },
+  { name: "other plugins cannot read a held player's chat", run: chatLeakToOtherPlugins },
 ];
 
 /** The leak scenario needs a second plugin; build it with the Maven that built EasyGuard. */
-function buildLeakProbe() {
+function buildLeakProbe(javaBin) {
   const { spawnSync } = require('child_process');
   const jar = path.join(PROBE_DIR, 'target', 'LeakProbe.jar');
-  if (fs.existsSync(jar)) return jar;
-  const build = spawnSync('mvn', ['-B', '-q', 'package'], { cwd: PROBE_DIR, encoding: 'utf8' });
-  if (build.status !== 0 || !fs.existsSync(jar)) return null;
+  // Always rebuild, so a changed probe is never tested from a stale jar; Maven skips it if unchanged.
+  // The probe targets Java 25 like the plugin, so give Maven the same JDK the server runs on.
+  const env = { ...process.env };
+  const binary = path.isAbsolute(javaBin)
+    ? javaBin
+    : spawnSync('sh', ['-c', `command -v ${javaBin}`], { encoding: 'utf8' }).stdout.trim();
+  if (binary) {
+    const javaHome = path.dirname(path.dirname(fs.realpathSync(binary)));
+    if (fs.existsSync(path.join(javaHome, 'bin', 'javac'))) env.JAVA_HOME = javaHome;
+  }
+  const build = spawnSync('mvn', ['-B', '-q', 'package'], { cwd: PROBE_DIR, encoding: 'utf8', env });
+  if (build.status !== 0 || !fs.existsSync(jar)) {
+    console.log(`probe    build failed:\n${(build.stdout || '') + (build.stderr || '')}`.trimEnd());
+    return null;
+  }
   return jar;
 }
 
@@ -492,7 +610,7 @@ async function main() {
   server.writeBaseFiles();
   server.installPlugin(pluginJar);
 
-  const probeJar = buildLeakProbe();
+  const probeJar = buildLeakProbe(javaBin);
   let scenarios = SCENARIOS;
   if (probeJar) {
     server.installPlugin(probeJar);

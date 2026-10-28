@@ -16,8 +16,15 @@ discord:
   # How long to wait for Discord before treating delivery as failed.
   timeout_seconds: 5
 
-  # Text put in front of every message, e.g. "<@1234567890>" to ping yourself.
-  # Pings are suppressed by default, so this renders as plain text unless you allow mentions.
+  # Discord users to ping on every join request, so a login attempt on a compromised account
+  # reaches your phone instead of waiting in the channel. Use user IDs, not names:
+  # Discord -> Settings -> Advanced -> Developer Mode, then right-click your name -> Copy User ID.
+  # These are the ONLY mentions that can ping: @everyone, @here and roles never do, whatever the
+  # message text says.
+  #   ping_user_ids: ["123456789012345678"]
+  ping_user_ids: []
+
+  # Plain text put in front of every message. It never pings anyone - use ping_user_ids for that.
   mention_prefix: ""
 
   # Only https://discord.com/api/webhooks/... URLs are accepted unless you set this to true.
@@ -29,7 +36,8 @@ code:
   ttl_seconds: 300
   max_attempts: 3
 
-  # Per-player wait before another code may be issued.
+  # Per-player wait before another code may be issued. Reconnecting does not reset it, so one
+  # account cannot loop logins to flood your channel. A successful verification clears it.
   cooldown_seconds: 10
 
   # Server-wide ceiling, so a join-flood cannot spam your Discord channel.
@@ -78,6 +86,7 @@ messages:
   kick_unavailable: "<red>Verification is unavailable right now.</red><newline><gray>The server could not reach Discord. Try again shortly.</gray>"
   kick_rate_limited: "<red>Too many verification requests.</red><newline><gray>Wait a moment and reconnect.</gray>"
   kick_lockdown: "<red>This server is locked down.</red><newline><gray>EasyGuard could not start, so logins are blocked.</gray>"
+  kick_manual_lockdown: "<red>This server is locked down.</red><newline><gray>An administrator has paused all logins.</gray>"
 
   # Plain Markdown sent to Discord (not MiniMessage). \n makes a new line.
   discord_template: "**Join request**\nPlayer: `<player>`\nUUID: `<uuid>`\nIP: `<ip>`\nCode: **<code>**\nExpires in <ttl>."
