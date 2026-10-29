@@ -11,7 +11,7 @@ people download matches the SHA-256 in the release notes.
 - [ ] **Make the GitHub repository public**, or remove the source links below. Both sites link to
       it, and `plugin.yml` names it as the plugin's website; while it's private, that link is a
       404 for everyone but you.
-- [ ] Have an icon ready: square PNG, at least 256x256. Both sites accept one.
+- [ ] Icon: [`icon.png`](icon.png) (512x512, drawn from [`icon.svg`](icon.svg)). Both sites accept it.
 - [ ] Optional but worth it: two or three screenshots - the in-game prompt, a Discord join
       request, `/discordeasylogin status`.
 
