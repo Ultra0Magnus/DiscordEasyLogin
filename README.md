@@ -4,13 +4,13 @@ A second factor for your Minecraft server. When someone joins, they are frozen i
 single-use code is posted to a Discord channel you control. They paste that code in chat to play.
 No code, no game.
 
-Built for **Paper 26.1.2 and 26.2** (requires **Java 25**). Formerly called EasyGuard —
+Built for **Paper 26.1.2 and 26.2** (requires **Java 25**). Formerly called EasyGuard -
 see [Upgrading from EasyGuard](#upgrading-from-easyguard).
 
 ## Why
 
 A whitelist proves an *account name* is allowed. It does not prove the person behind it is you or
-your friends — a compromised, shared, or spoofed account walks straight in, and a public tunnel
+your friends - a compromised, shared, or spoofed account walks straight in, and a public tunnel
 address (playit.gg and friends) means anyone can knock. DiscordEasyLogin adds a check on something an
 attacker almost certainly cannot reach: your private Discord channel.
 
@@ -44,16 +44,16 @@ In Discord: **your channel → Edit Channel → Integrations → Webhooks → Ne
 URL**.
 
 Lock that channel down (`View Channel` for you and trusted members only). Anyone who can read the
-channel can read every code — see [Limits](#limits).
+channel can read every code - see [Limits](#limits).
 
 ### 2. Install
 
 Drop `DiscordEasyLogin-0.1.0.jar` into `plugins/` and start the server once. It will refuse to run until a
-webhook URL is set (that is deliberate — see [Fail-closed](#fail-closed)).
+webhook URL is set (that is deliberate - see [Fail-closed](#fail-closed)).
 
 ### 3. Point it at your webhook
 
-Either set an environment variable before starting the server (preferred — keeps the secret out of
+Either set an environment variable before starting the server (preferred - keeps the secret out of
 config backups):
 
 ```sh
@@ -76,7 +76,7 @@ Then `/discordeasylogin reload` (or restart). `/discordeasylogin status` shows w
 | Situation | Behaviour |
 |---|---|
 | Discord unreachable | Player stays frozen. The code is written to the **server console**, so you can still get yourself in during an outage. Set `fallback.log_code_to_console_on_failure: false` to kick instead. |
-| Bad config / plugin fails to start | The server enters **lockdown**: every login is denied with an explanatory kick screen. A broken DiscordEasyLogin blocks the door rather than vanishing and leaving the server open. `/discordeasylogin lockdown off` cannot lift it — only a config that loads can. |
+| Bad config / plugin fails to start | The server enters **lockdown**: every login is denied with an explanatory kick screen. A broken DiscordEasyLogin blocks the door rather than vanishing and leaving the server open. `/discordeasylogin lockdown off` cannot lift it - only a config that loads can. |
 | Unexpected error while checking a joining player | The player is kicked with "verification unavailable" and the error is logged. An exception never lets someone in unverified. |
 | Discord answers slowly, then fails | Only the session that asked is affected. A late failure can never act on a newer login by the same account. |
 | Webhook URL typo pointing elsewhere | Rejected at load. Only `https://discord.com/api/webhooks/…` is accepted unless you explicitly set `discord.allow_non_discord_host: true`. |
@@ -94,12 +94,12 @@ The values worth knowing:
 |---|---|---|
 | `enabled` | `true` | Master switch for the gate. |
 | `discord.webhook_url` | *empty* | Overridden by `$DISCORDEASYLOGIN_WEBHOOK` (the old `$EASYGUARD_DISCORD_WEBHOOK` still works). |
-| `discord.ping_user_ids` | *empty* | Discord user IDs to ping on every join request, so a login attempt on a compromised account reaches your phone. The only mentions that can ever ping — `@everyone`, `@here` and roles never do. |
+| `discord.ping_user_ids` | *empty* | Discord user IDs to ping on every join request, so a login attempt on a compromised account reaches your phone. The only mentions that can ever ping - `@everyone`, `@here` and roles never do. |
 | `code.length` | `8` | Drawn from `ABCDEFGHJKMNPQRSTUVWXYZ23456789` (no `O/0/I/1/L` lookalikes). Minimum 6. |
 | `code.ttl_seconds` | `300` | How long a code stays valid. |
 | `code.max_attempts` | `3` | Wrong guesses before a kick. |
 | `verification.timeout_seconds` | `120` | How long a player may sit unverified. |
-| `verification.apply_blindness` | `true` | Makes it harder for an unverified player to look around. Not a guarantee — see [Limits](#limits). |
+| `verification.apply_blindness` | `true` | Makes it harder for an unverified player to look around. Not a guarantee - see [Limits](#limits). |
 | `verification.hide_from_others` | `true` | Unverified players are invisible and absent from the tab list. |
 | `trust.duration_hours` | `24` | `0` requires a code on every single join. |
 
@@ -120,7 +120,7 @@ editable under `messages:`.
 | Permission | Default | Notes |
 |---|---|---|
 | `discordeasylogin.admin` | op | Administration commands. |
-| `discordeasylogin.bypass` | **nobody** | Skips verification entirely. Granting this to yourself defeats the gate — the 24h trust window is the convenience mechanism instead. |
+| `discordeasylogin.bypass` | **nobody** | Skips verification entirely. Granting this to yourself defeats the gate - the 24h trust window is the convenience mechanism instead. |
 
 `/dlogin` is a short alias for `/discordeasylogin`.
 
@@ -140,7 +140,7 @@ What changed, apart from the name:
 |---|---|
 | `/easyguard`, `/eg` | `/discordeasylogin`, `/dlogin` |
 | `easyguard.admin`, `easyguard.bypass` | `discordeasylogin.admin`, `discordeasylogin.bypass` |
-| `EASYGUARD_DISCORD_WEBHOOK` | `DISCORDEASYLOGIN_WEBHOOK` — the old variable still works |
+| `EASYGUARD_DISCORD_WEBHOOK` | `DISCORDEASYLOGIN_WEBHOOK` - the old variable still works |
 | IP address in every Discord message | Off by default for new installs; opt in by adding `<ip>` to `discord_template` |
 
 A copied config keeps its own message texts, so it still says "EasyGuard" in-game and still sends
@@ -158,7 +158,7 @@ Worth being clear about what this does and does not buy you:
 - **Unverified players are technically online.** They occupy a player slot while frozen, blinded and
   hidden. The verification timeout bounds how long.
 - **Being in the world leaks some information.** A held player cannot act, chat, read chat, use
-  items, move or be seen — but the server still sends them the chunks around where they logged
+  items, move or be seen - but the server still sends them the chunks around where they logged
   out. Blindness hides that from a normal client, not from a modified one. Fully closing this
   needs players to verify before they enter the world at all, which is a larger redesign.
 - **Voice chat is not covered.** Simple Voice Chat and similar plugins carry voice on their own
@@ -181,7 +181,7 @@ JAVA_HOME=/path/to/jdk-25 mvn package   # -> target/DiscordEasyLogin-0.1.0.jar
 
 ## Testing
 
-Because this plugin fails *closed*, the failure that matters is "nobody can log in" — so test
+Because this plugin fails *closed*, the failure that matters is "nobody can log in" - so test
 it against a server you do not care about before you point it at one you do.
 
 ```sh
@@ -190,7 +190,7 @@ cd testing && npm install && npm run e2e
 
 That boots a throwaway Paper 26.1.2 server, installs the jar you just built, points it at a
 local mock webhook (never the real Discord), and drives real Minecraft clients through twelve
-scenarios — including the ones that lock the server down — then cleans up. About four minutes.
+scenarios - including the ones that lock the server down - then cleans up. About four minutes.
 Set `DISCORDEASYLOGIN_TEST_MC_VERSION=26.2` to test on 26.2; CI runs every supported version on
 every push.
 
@@ -203,12 +203,12 @@ It verifies, against a live server rather than by assertion:
 - a verified player reconnecting inside the trust window gets no second code
 - an unanswered join is kicked on timeout
 - **Discord unreachable → the player is held, the code goes to the server console, and that
-  console code still verifies** — the escape hatch you would use during an outage
+  console code still verifies** - the escape hatch you would use during an outage
 - **a broken config denies every login** rather than leaving the server unprotected, whether it
-  breaks on reload or at startup — and `/discordeasylogin lockdown off` cannot lift it
+  breaks on reload or at startup - and `/discordeasylogin lockdown off` cannot lift it
 - a reload mid-verification keeps the code that is already in Discord valid
 - a manual lockdown survives a reload, and a typo cannot switch it off
-- **a fixed config lets you back in** — by reload, without a restart, or by restart
+- **a fixed config lets you back in** - by reload, without a restart, or by restart
 
 A second suite, `npm run adversarial`, tries to *defeat* the gate rather than exercise it, with
 fifteen attacks: namespaced command bypasses, using another player's code, reusing a dead one,
@@ -220,7 +220,7 @@ freeing the next login, and other plugins reading what a held player types.
 Several of those started as findings in a security review and failed against the code of the
 time; each now guards its fix. See [`testing/README.md`](testing/README.md) for the list, for
 `DISCORDEASYLOGIN_EXTRA_PLUGINS` (running the suites beside your own plugin set), and for what
-deliberately is not covered — notably voice chat, which no scripted client can test.
+deliberately is not covered - notably voice chat, which no scripted client can test.
 
 `mvn test` runs the unit tests underneath both suites (codes, attempt/expiry handling, cooldowns,
 config validation, session persistence, webhook delivery and redaction against a local mock HTTP
